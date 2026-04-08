@@ -13,15 +13,15 @@ export class ShaderPipeline {
   private vao: WebGLVertexArrayObject;
   private texture: WebGLTexture;
   private dirty = true;
+  private hasTexture = false;
 
   constructor(gl: WebGL2RenderingContext) {
     this.gl = gl;
 
-    // Compile shaders
     this.program = createProgram(gl, VERTEX_SOURCE, FRAGMENT_SOURCE);
     this.uniforms = getUniformLocations(gl, this.program);
 
-    // Full-screen quad: two triangles via TRIANGLE_STRIP
+    // Full-screen quad
     const verts = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
     this.vao = gl.createVertexArray()!;
     const vbo = gl.createBuffer()!;
@@ -32,7 +32,7 @@ export class ShaderPipeline {
     gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
     gl.bindVertexArray(null);
 
-    // Texture for page content
+    // Texture
     this.texture = gl.createTexture()!;
     gl.bindTexture(gl.TEXTURE_2D, this.texture);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -40,7 +40,6 @@ export class ShaderPipeline {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 
-    // Set default uniforms
     gl.useProgram(this.program);
     gl.uniform1i(this.uniforms.u_texture, 0);
   }
@@ -59,25 +58,19 @@ export class ShaderPipeline {
     this.dirty = true;
   }
 
-  setEffect(index: number): void {
-    this.gl.useProgram(this.program);
-    this.gl.uniform1i(this.uniforms.u_effect, index);
-  }
-
   setIntensity(value: number): void {
     this.gl.useProgram(this.program);
     this.gl.uniform1f(this.uniforms.u_intensity, value);
   }
 
-  setSpeed(value: number): void {
+  setMouse(x: number, y: number): void {
     this.gl.useProgram(this.program);
-    this.gl.uniform1f(this.uniforms.u_speed, value);
+    this.gl.uniform2f(this.uniforms.u_mouse, x, y);
   }
 
   draw(time: number, wrapper: HTMLElement): void {
     const gl = this.gl;
 
-    // Re-upload texture if content changed
     if (this.dirty) {
       gl.bindTexture(gl.TEXTURE_2D, this.texture);
       try {
@@ -90,10 +83,15 @@ export class ShaderPipeline {
           wrapper,
         );
         this.dirty = false;
+        this.hasTexture = true;
       } catch {
-        // Element may not be ready yet; will retry next frame
+        // Element not ready yet — don't draw anything, keep retrying
+        return;
       }
     }
+
+    // Don't draw until we have a valid texture (avoids black flash)
+    if (!this.hasTexture) return;
 
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
     gl.clearColor(0, 0, 0, 1);

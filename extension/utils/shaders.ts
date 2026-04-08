@@ -18,11 +18,8 @@ out vec4 fragColor;
 uniform sampler2D u_texture;
 uniform float u_time;
 uniform float u_intensity;
-uniform float u_speed;
-uniform int u_effect;
+uniform vec2 u_mouse;
 uniform vec2 u_resolution;
-
-// ---- Noise utilities ----
 
 float hash(vec2 p) {
   float h = dot(p, vec2(127.1, 311.7));
@@ -40,158 +37,84 @@ float noise(vec2 p) {
   return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
 }
 
-// ---- Effect 0: CRT Monitor ----
-// Intensity scales: barrel distortion, chromatic aberration, scanline depth, vignette, flicker
-
-vec4 effectCRT(vec2 uv, float t, float i) {
-  vec2 center = uv - 0.5;
-  float r2 = dot(center, center);
-  vec2 duv = uv + center * r2 * 0.3 * i;
-
-  float aberr = 0.006 * i;
-  float red   = texture(u_texture, clamp(duv + vec2(aberr, 0.0), 0.0, 1.0)).r;
-  float green = texture(u_texture, clamp(duv, 0.0, 1.0)).g;
-  float blue  = texture(u_texture, clamp(duv - vec2(aberr, 0.0), 0.0, 1.0)).b;
-  vec3 col = vec3(red, green, blue);
-
-  float scanline = 1.0 - 0.15 * i * (0.5 + 0.5 * sin(uv.y * u_resolution.y * 1.5 + t * 2.0));
-  col *= scanline;
-
-  float vignette = 1.0 - r2 * 2.5 * i;
-  col *= clamp(vignette, 0.0, 1.0);
-
-  col *= 1.0 - 0.06 * i * (0.5 + 0.5 * sin(t * 8.0));
-
-  return vec4(col, 1.0);
-}
-
-// ---- Effect 1: Underwater ----
-// Intensity scales: wave distortion amplitude, tint strength, caustic brightness, depth fog
-
-vec4 effectUnderwater(vec2 uv, float t, float i) {
-  vec2 duv = uv;
-  duv.x += sin(uv.y * 12.0 + t * 2.0) * 0.015 * i;
-  duv.y += cos(uv.x * 10.0 + t * 1.5) * 0.012 * i;
-  duv = clamp(duv, 0.0, 1.0);
-
-  vec4 col = texture(u_texture, duv);
-  col.rgb = mix(col.rgb, col.rgb * vec3(0.5, 0.85, 1.0), 0.6 * i);
-
-  float caustic1 = noise(uv * 8.0 + vec2(t * 0.8, t * 0.6));
-  float caustic2 = noise(uv * 12.0 - vec2(t * 0.5, t * 0.7));
-  float caustics = smoothstep(0.4, 0.9, caustic1 * caustic2 * 4.0);
-  col.rgb += caustics * vec3(0.15, 0.25, 0.3) * i;
-
-  col.rgb *= 1.0 - 0.2 * i * uv.y;
-
-  return col;
-}
-
-// ---- Effect 2: VHS Glitch ----
-// Intensity scales: glitch band probability & displacement, color bleed, jitter, noise bands
-
-vec4 effectVHS(vec2 uv, float t, float i) {
-  vec2 duv = uv;
-
-  float bandThresh = 1.0 - 0.12 * i;
-  float band = step(bandThresh, hash(vec2(floor(t * 15.0), floor(uv.y * 40.0))));
-  duv.x += band * (hash(vec2(t, uv.y)) - 0.5) * 0.15 * i;
-  duv.x += (hash(vec2(uv.y * 100.0, t * 3.0)) - 0.5) * 0.004 * i;
-  duv = clamp(duv, 0.0, 1.0);
-
-  float offset = (0.008 + band * 0.03) * i;
-  float red   = texture(u_texture, clamp(duv + vec2(offset, 0.0), 0.0, 1.0)).r;
-  float green = texture(u_texture, duv).g;
-  float blue  = texture(u_texture, clamp(duv - vec2(offset, 0.0), 0.0, 1.0)).b;
-  vec3 col = vec3(red, green, blue);
-
-  float noiseBand = smoothstep(0.0, 0.03,
-    abs(fract(uv.y * 3.0 + t * 0.5) - 0.5) - 0.47);
-  col = mix(col, vec3(hash(uv + t)), noiseBand * 0.5 * i);
-
-  col *= 1.0 - 0.15 * i * (0.5 + 0.5 * sin(uv.y * u_resolution.y * 0.5));
-
-  return vec4(col, 1.0);
-}
-
-// ---- Effect 3: Night Vision ----
-// Intensity scales: green monochrome amount, grain strength, bloom, vignette tightness
-
-vec4 effectNightVision(vec2 uv, float t, float i) {
-  vec4 col = texture(u_texture, uv);
-  float lum = dot(col.rgb, vec3(0.299, 0.587, 0.114));
-
-  vec3 nightCol = vec3(0.1, 1.0, 0.2) * lum;
-  // Blend from original color toward green monochrome based on intensity
-  vec3 result = mix(col.rgb, nightCol, i);
-
-  float bloom = smoothstep(0.5, 1.0, lum) * 0.4 * i;
-  result += vec3(0.05, 0.2, 0.05) * bloom;
-
-  float grain = (hash(uv * u_resolution + vec2(t * 100.0, 0.0)) - 0.5) * 0.2 * i;
-  result += grain;
-
-  vec2 center = uv - 0.5;
-  float dist = length(center);
-  float vignetteEdge = mix(1.0, 0.35, i);
-  float vignette = 1.0 - smoothstep(vignetteEdge, vignetteEdge + 0.35, dist);
-  result *= mix(1.0, vignette, i);
-
-  return vec4(result, 1.0);
-}
-
-// ---- Effect 4: Pixelate ----
-// Intensity scales: block size (low = subtle, high = chunky)
-
-vec4 effectPixelate(vec2 uv, float t, float i) {
-  float blockSize = mix(2.0, 24.0, i);
-  vec2 blocks = u_resolution / blockSize;
-  vec2 blockUV = floor(uv * blocks) / blocks + 0.5 / blocks;
-
-  return texture(u_texture, blockUV);
-}
-
-// ---- Effect 5: Thermal ----
-// Intensity scales: how much the heat-map color replaces original, shimmer amount
-
-vec4 effectThermal(vec2 uv, float t, float i) {
-  vec4 col = texture(u_texture, uv);
-  float lum = dot(col.rgb, vec3(0.299, 0.587, 0.114));
-
-  vec3 thermal;
-  if (lum < 0.15) {
-    thermal = mix(vec3(0.0), vec3(0.0, 0.0, 1.0), lum / 0.15);
-  } else if (lum < 0.35) {
-    thermal = mix(vec3(0.0, 0.0, 1.0), vec3(0.0, 1.0, 0.0), (lum - 0.15) / 0.2);
-  } else if (lum < 0.55) {
-    thermal = mix(vec3(0.0, 1.0, 0.0), vec3(1.0, 1.0, 0.0), (lum - 0.35) / 0.2);
-  } else if (lum < 0.75) {
-    thermal = mix(vec3(1.0, 1.0, 0.0), vec3(1.0, 0.0, 0.0), (lum - 0.55) / 0.2);
-  } else {
-    thermal = mix(vec3(1.0, 0.0, 0.0), vec3(1.0, 1.0, 1.0), (lum - 0.75) / 0.25);
-  }
-
-  thermal += (noise(uv * 20.0 + t * 2.0) - 0.5) * 0.08 * i;
-
-  return vec4(mix(col.rgb, thermal, i), 1.0);
-}
-
-// ---- Main ----
-
 void main() {
-  float t = u_time * u_speed;
   float i = u_intensity;
+  float t = u_time;
+  vec2 uv = v_uv;
 
-  vec4 result;
-  if (u_effect == 0)      result = effectCRT(v_uv, t, i);
-  else if (u_effect == 1) result = effectUnderwater(v_uv, t, i);
-  else if (u_effect == 2) result = effectVHS(v_uv, t, i);
-  else if (u_effect == 3) result = effectNightVision(v_uv, t, i);
-  else if (u_effect == 4) result = effectPixelate(v_uv, t, i);
-  else if (u_effect == 5) result = effectThermal(v_uv, t, i);
-  else                    result = texture(u_texture, v_uv);
+  // --- 1. Global sway: the room is spinning ---
+  uv.x += sin(t * 1.5) * 0.025 * i;
+  uv.y += cos(t * 1.1) * 0.012 * i;
+  // Add a slower, larger wobble on top
+  uv.x += sin(t * 0.7 + 1.5) * 0.015 * i;
+  uv.y += cos(t * 0.5 + 0.8) * 0.008 * i;
 
-  fragColor = result;
+  // --- 2. Hiccup jolts: random sudden jerks ---
+  float hiccupSeed = floor(t * 2.5);
+  float hiccupChance = hash(vec2(hiccupSeed, 42.0));
+  float hiccupActive = step(0.92, hiccupChance) * i;
+  float hiccupPhase = fract(t * 2.5);
+  float hiccupFade = 1.0 - smoothstep(0.0, 0.3, hiccupPhase);
+  vec2 hiccupDir = vec2(
+    hash(vec2(hiccupSeed, 13.0)) - 0.5,
+    hash(vec2(hiccupSeed, 77.0)) - 0.5
+  );
+  uv += hiccupDir * 0.04 * hiccupActive * hiccupFade;
+
+  // --- 3. Mouse warp: fisheye ripple around cursor ---
+  vec2 mouseUV = u_mouse;
+  vec2 toMouse = uv - mouseUV;
+  float aspect = u_resolution.x / u_resolution.y;
+  toMouse.x *= aspect;
+  float mouseDist = length(toMouse);
+  float mouseRadius = 0.12 + 0.15 * i;
+  float warpStrength = smoothstep(mouseRadius, 0.0, mouseDist);
+  float ripple = sin(mouseDist * 25.0 - t * 5.0) * 0.5 + 0.5;
+  vec2 warpDir = normalize(toMouse + 0.0001);
+  warpDir.x /= aspect;
+  uv += warpDir * warpStrength * ripple * 0.06 * i;
+
+  uv = clamp(uv, 0.0, 1.0);
+
+  // --- 4. Double/triple vision ---
+  float visionOffset = 0.012 * i;
+  vec2 off1 = vec2(visionOffset, visionOffset * 0.5);
+  vec2 off2 = vec2(-visionOffset * 0.8, visionOffset * 0.7);
+  vec4 col0 = texture(u_texture, clamp(uv, 0.0, 1.0));
+  vec4 col1 = texture(u_texture, clamp(uv + off1, 0.0, 1.0));
+  vec4 col2 = texture(u_texture, clamp(uv + off2, 0.0, 1.0));
+  vec4 col = mix(col0, col0 * 0.5 + col1 * 0.3 + col2 * 0.2, i);
+
+  // --- 5. Chromatic aberration ---
+  float aberr = 0.008 * i;
+  col.r = texture(u_texture, clamp(uv + vec2(aberr, 0.0), 0.0, 1.0)).r * (1.0 - i)
+         + texture(u_texture, clamp(uv + off1 + vec2(aberr, 0.0), 0.0, 1.0)).r * i * 0.5
+         + col.r * i * 0.5;
+  col.b = texture(u_texture, clamp(uv - vec2(aberr, 0.0), 0.0, 1.0)).b * (1.0 - i)
+         + texture(u_texture, clamp(uv + off2 - vec2(aberr, 0.0), 0.0, 1.0)).b * i * 0.5
+         + col.b * i * 0.5;
+
+  // --- 6. Blur: multi-sample box blur ---
+  float blurSize = 2.0 * i / u_resolution.x;
+  vec4 blur = col;
+  blur += texture(u_texture, clamp(uv + vec2(blurSize, 0.0), 0.0, 1.0));
+  blur += texture(u_texture, clamp(uv - vec2(blurSize, 0.0), 0.0, 1.0));
+  blur += texture(u_texture, clamp(uv + vec2(0.0, blurSize), 0.0, 1.0));
+  blur += texture(u_texture, clamp(uv - vec2(0.0, blurSize), 0.0, 1.0));
+  col = mix(col, blur / 5.0, i * 0.6);
+
+  // --- 7. Warm color shift (alcohol flush) ---
+  col.rgb = mix(col.rgb, col.rgb * vec3(1.15, 0.95, 0.80), i * 0.35);
+
+  // --- 8. Tunnel vision: heavy vignette ---
+  vec2 center = v_uv - 0.5;
+  float vig = 1.0 - dot(center, center) * 3.5 * i;
+  col.rgb *= clamp(vig, 0.0, 1.0);
+
+  // --- 9. Slight brightness fluctuation (woozy) ---
+  col.rgb *= 1.0 - 0.04 * i * sin(t * 3.0 + v_uv.y * 5.0);
+
+  fragColor = col;
 }
 `;
 
@@ -199,8 +122,7 @@ export interface Uniforms {
   u_texture: WebGLUniformLocation | null;
   u_time: WebGLUniformLocation | null;
   u_intensity: WebGLUniformLocation | null;
-  u_speed: WebGLUniformLocation | null;
-  u_effect: WebGLUniformLocation | null;
+  u_mouse: WebGLUniformLocation | null;
   u_resolution: WebGLUniformLocation | null;
 }
 
@@ -247,8 +169,7 @@ export function getUniformLocations(
     u_texture: gl.getUniformLocation(program, 'u_texture'),
     u_time: gl.getUniformLocation(program, 'u_time'),
     u_intensity: gl.getUniformLocation(program, 'u_intensity'),
-    u_speed: gl.getUniformLocation(program, 'u_speed'),
-    u_effect: gl.getUniformLocation(program, 'u_effect'),
+    u_mouse: gl.getUniformLocation(program, 'u_mouse'),
     u_resolution: gl.getUniformLocation(program, 'u_resolution'),
   };
 }

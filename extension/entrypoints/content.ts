@@ -1,29 +1,48 @@
 import { defineContentScript } from 'wxt/utils/define-content-script';
 import { ShaderPipeline } from '@/utils/pipeline';
-import { activate, deactivate } from '@/utils/dom';
-import { EFFECT_MAP } from '@/utils/effects';
-import { DEFAULT_STATE, type ShaderState, type ToContentMessage } from '@/utils/messages';
+import {
+  activate,
+  deactivate,
+  createBeerCan,
+  removeBeerCan,
+  setBeerWobble,
+  triggerChug,
+} from '@/utils/dom';
+import type { ToContentMessage, DrunkState } from '@/utils/messages';
+
+const DECAY_DURATION = 60; // seconds from 100% to 0%
+const DRINK_AMOUNT = 0.2; // each chug adds 20%
+const TAG = '[DrunkSim]';
 
 export default defineContentScript({
   matches: ['<all_urls>'],
   runAt: 'document_idle',
 
   main(ctx) {
-    let state: ShaderState = { ...DEFAULT_STATE };
+    let active = false;
+    let intensity = 0;
     let pipeline: ShaderPipeline | null = null;
     let canvas: HTMLCanvasElement | null = null;
     let wrapper: HTMLDivElement | null = null;
+    let beerCan: HTMLElement | null = null;
     let rafId = 0;
+    let lastTime = 0;
+    let mouseX = 0.5;
+    let mouseY = 0.5;
+    let renderStarted = false;
 
-    // Load persisted state
-    chrome.storage.local.get('shaderState', (result) => {
-      if (result.shaderState) {
-        state = { ...DEFAULT_STATE, ...result.shaderState };
-        if (state.active) activateShader();
-      }
-    });
+    function startRenderLoop() {
+      if (renderStarted) return;
+      renderStarted = true;
+      console.log(TAG, 'Starting render loop');
+      pipeline?.markDirty();
+      lastTime = 0;
+      rafId = requestAnimationFrame(renderLoop);
+    }
 
-    function activateShader() {
+    function activateDrunk(restoredIntensity = 0) {
+      if (active) return;
+
       const result = activate();
       if (!result) return;
       canvas = result.canvas;
@@ -39,51 +58,73 @@ export default defineContentScript({
         canvas = null;
         wrapper = null;
         console.warn(
-          'Shader Overlay: HTML-in-Canvas API not available. Enable chrome://flags/#canvas-draw-element',
+          TAG,
+          'HTML-in-Canvas API not available. Enable chrome://flags/#canvas-draw-element',
         );
         return;
       }
 
+      console.log(TAG, 'Activated, texElementImage2D available');
+
       pipeline = new ShaderPipeline(gl);
-      pipeline.setEffect(EFFECT_MAP[state.shader]);
-      pipeline.setIntensity(state.intensity);
-      pipeline.setSpeed(state.speed);
+      intensity = restoredIntensity;
+      pipeline.setIntensity(intensity);
       handleResize();
 
-      // Re-upload texture when DOM content changes
-      canvas.addEventListener('paint', onPaint);
+      // Beer can (outside canvas, on top)
+      beerCan = createBeerCan();
+      beerCan.addEventListener('click', onDrink);
+
+      // Events
+      wrapper.addEventListener('scroll', onScroll);
+      wrapper.addEventListener('mousemove', onMouseMove);
       window.addEventListener('resize', handleResize);
 
-      // Also mark dirty on scroll since visible content changes
-      wrapper.addEventListener('scroll', onScroll);
-
-      // Start render loop
-      function renderLoop(time: number) {
-        if (!pipeline || !wrapper) return;
-        pipeline.draw(time / 1000, wrapper);
-        rafId = requestAnimationFrame(renderLoop);
-      }
-      rafId = requestAnimationFrame(renderLoop);
+      // Listen for paint events (marks texture dirty when DOM changes)
+      renderStarted = false;
+      canvas.addEventListener('paint', (e: Event) => {
+        console.log(
+          TAG,
+          'paint event, changedElements:',
+          (e as any).changedElements?.length,
+        );
+        pipeline?.markDirty();
+        // Start render loop on first paint
+        startRenderLoop();
+      });
 
       // Force initial paint
       if (canvas.requestPaint) {
+        console.log(TAG, 'Calling requestPaint()');
         canvas.requestPaint();
       }
 
-      state.active = true;
+      // Fallback: if paint event never fires, start rendering after 500ms
+      setTimeout(() => {
+        if (!renderStarted) {
+          console.log(TAG, 'Paint event did not fire, starting render loop via fallback');
+          pipeline?.markDirty();
+          startRenderLoop();
+        }
+      }, 500);
+
+      active = true;
       persistState();
     }
 
-    function deactivateShader() {
+    function deactivateDrunk() {
+      if (!active) return;
+
       if (rafId) cancelAnimationFrame(rafId);
       rafId = 0;
+      renderStarted = false;
 
-      if (canvas) {
-        canvas.removeEventListener('paint', onPaint);
+      if (beerCan) {
+        beerCan.removeEventListener('click', onDrink);
       }
-      if (wrapper) {
-        wrapper.removeEventListener('scroll', onScroll);
-      }
+      removeBeerCan();
+      beerCan = null;
+
       window.removeEventListener('resize', handleResize);
 
       if (pipeline) {
@@ -94,16 +135,27 @@ export default defineContentScript({
       deactivate();
       canvas = null;
       wrapper = null;
-      state.active = false;
+      active = false;
+      intensity = 0;
       persistState();
     }
 
-    function onPaint() {
+    function onDrink() {
+      intensity = Math.min(1.0, intensity + DRINK_AMOUNT);
+      triggerChug();
       pipeline?.markDirty();
+      persistState();
     }
 
     function onScroll() {
       pipeline?.markDirty();
+    }
+
+    function onMouseMove(e: MouseEvent) {
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      mouseX = (e.clientX - rect.left) / rect.width;
+      mouseY = (e.clientY - rect.top) / rect.height;
     }
 
     function handleResize() {
@@ -114,51 +166,66 @@ export default defineContentScript({
       pipeline.resize(window.innerWidth, window.innerHeight, dpr);
     }
 
-    function persistState() {
-      chrome.storage.local.set({ shaderState: state });
+    function renderLoop(timestamp: number) {
+      if (!pipeline || !wrapper) return;
+
+      const dt = lastTime ? (timestamp - lastTime) / 1000 : 0;
+      lastTime = timestamp;
+
+      // Decay intensity
+      if (intensity > 0) {
+        intensity = Math.max(0, intensity - dt / DECAY_DURATION);
+        // Persist periodically so navigations keep the level
+        if (Math.random() < 0.02) persistState();
+      }
+
+      // Update pipeline
+      pipeline.setIntensity(intensity);
+      pipeline.setMouse(mouseX, mouseY);
+
+      // Update beer can wobble
+      setBeerWobble(intensity);
+
+      // Draw
+      pipeline.draw(timestamp / 1000, wrapper);
+
+      rafId = requestAnimationFrame(renderLoop);
     }
+
+    function persistState() {
+      chrome.storage.local.set({
+        drunkState: { active, intensity } as DrunkState,
+      });
+    }
+
+    // Load persisted state — restore intensity across navigations
+    chrome.storage.local.get('drunkState', (result) => {
+      const state = result.drunkState as DrunkState | undefined;
+      if (state?.active) {
+        console.log(TAG, 'Restoring state, intensity:', state.intensity);
+        activateDrunk(state.intensity ?? 0);
+      }
+    });
 
     // Message listener
     chrome.runtime.onMessage.addListener(
       (msg: ToContentMessage, _sender, sendResponse) => {
-        switch (msg.type) {
-          case 'toggle':
-            if (msg.enabled && !state.active) {
-              state.shader = msg.shader;
-              activateShader();
-            } else if (!msg.enabled && state.active) {
-              deactivateShader();
-            }
-            break;
-
-          case 'setShader':
-            state.shader = msg.shader;
-            pipeline?.setEffect(EFFECT_MAP[msg.shader]);
-            persistState();
-            break;
-
-          case 'setIntensity':
-            state.intensity = msg.intensity;
-            pipeline?.setIntensity(msg.intensity);
-            persistState();
-            break;
-
-          case 'setSpeed':
-            state.speed = msg.speed;
-            pipeline?.setSpeed(msg.speed);
-            persistState();
-            break;
-
-          case 'getState':
-            sendResponse(state);
-            return true;
+        if (msg.type === 'toggle') {
+          if (active) {
+            deactivateDrunk();
+          } else {
+            activateDrunk();
+          }
+        } else if (msg.type === 'getState') {
+          sendResponse({ active, intensity } as DrunkState);
+          return true;
         }
       },
     );
 
-    // Clean teardown on extension reload/update
+    // Cleanup on extension reload
     ctx.onInvalidated(() => {
-      if (state.active) deactivateShader();
+      if (active) deactivateDrunk();
     });
   },
 });

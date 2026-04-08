@@ -2,10 +2,10 @@ import { defineConfig } from 'wxt';
 
 export default defineConfig({
   manifest: {
-    name: 'Shader Overlay',
-    description:
-      'Apply real-time WebGL shader effects to any website using the HTML-in-Canvas API',
+    name: 'Drunk Simulator',
+    description: 'Chug beers and watch the web get wobbly',
     version: '1.0.0',
     permissions: ['activeTab', 'storage'],
+    action: {},
   },
 });

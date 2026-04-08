@@ -1,14 +1,14 @@
 import { defineBackground } from 'wxt/utils/define-background';
-import { DEFAULT_STATE } from '@/utils/messages';
 
 export default defineBackground({
   main() {
-    chrome.runtime.onInstalled.addListener(() => {
-      chrome.storage.local.get('shaderState', (result) => {
-        if (!result.shaderState) {
-          chrome.storage.local.set({ shaderState: DEFAULT_STATE });
-        }
-      });
+    chrome.action.onClicked.addListener(async (tab) => {
+      if (!tab.id) return;
+      try {
+        await chrome.tabs.sendMessage(tab.id, { type: 'toggle' });
+      } catch {
+        // Content script not ready on this page
+      }
     });
   },
 });
