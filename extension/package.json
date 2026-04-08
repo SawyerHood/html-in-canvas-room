@@ -1,0 +1,15 @@
+{
+  "name": "shader-overlay",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wxt",
+    "build": "wxt build",
+    "prepare": "wxt prepare"
+  },
+  "devDependencies": {
+    "wxt": "^0.20.0",
+    "typescript": "^5.7.0"
+  }
+}
