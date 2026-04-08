@@ -27,10 +27,10 @@ export class FPSControls {
     this.camera = camera;
     this.canvas = canvas;
 
-    // Initialize yaw from camera direction
+    // Initialize yaw/pitch from camera direction
     const dir = new THREE.Vector3();
     camera.getWorldDirection(dir);
-    this.yaw = Math.atan2(dir.x, dir.z);
+    this.yaw = Math.atan2(-dir.x, -dir.z);
     this.pitch = Math.asin(Math.max(-1, Math.min(1, dir.y)));
 
     this.onMouseMove = (e: MouseEvent) => {

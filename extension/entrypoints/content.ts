@@ -7,17 +7,20 @@ import { FPSControls } from '@/utils/fps-controls';
 import type { ToContentMessage, CRTState } from '@/utils/messages';
 
 const TAG = '[CRTWorld]';
-const SEATED_POS = new THREE.Vector3(0, 0.8, 1.8);
-const SEATED_LOOK = new THREE.Vector3(0, 0.8, 0);
-const DESK_CENTER = new THREE.Vector3(0, 0.8, 0.5);
+// Monitor sits on desk (top=0.75), screen center at desk+0.3=1.05
+const SCREEN_CENTER_Y = 0.75 + 0.3;  // DESK_TOP + screen local y
+const SCREEN_CENTER_Z = 0.1 + 0.295; // monitorGroup z + screen local z
+const SEATED_POS = new THREE.Vector3(0, SCREEN_CENTER_Y, SCREEN_CENTER_Z + 0.45);
+const SEATED_LOOK = new THREE.Vector3(0, SCREEN_CENTER_Y, SCREEN_CENTER_Z);
+const DESK_CENTER = new THREE.Vector3(0, SCREEN_CENTER_Y, 0);
 const SIT_DISTANCE = 3.5;
 const HUD_ID = '__crt-hud';
 
 // Screen mesh dimensions (must match crt-scene.ts)
-const SCREEN_HALF_W = 1.55 / 2;
-const SCREEN_HALF_H = 1.16 / 2;
-const SCREEN_Y = 0.8;
-const SCREEN_Z = 0.83;
+const SCREEN_HALF_W = 0.54 / 2;
+const SCREEN_HALF_H = 0.40 / 2;
+const SCREEN_Y = SCREEN_CENTER_Y;
+const SCREEN_Z = SCREEN_CENTER_Z;
 
 export default defineContentScript({
   matches: ['<all_urls>'],
@@ -44,6 +47,10 @@ export default defineContentScript({
 
     // Project the CRT screen corners to viewport coordinates
     function getScreenBounds(camera: THREE.PerspectiveCamera): DOMRect | null {
+      // Ensure matrices are up to date (critical on first frame / after restore)
+      camera.updateProjectionMatrix();
+      camera.updateMatrixWorld(true);
+
       const corners = [
         new THREE.Vector3(-SCREEN_HALF_W, SCREEN_Y - SCREEN_HALF_H, SCREEN_Z),
         new THREE.Vector3(SCREEN_HALF_W, SCREEN_Y - SCREEN_HALF_H, SCREEN_Z),
@@ -160,7 +167,7 @@ export default defineContentScript({
       }
     }
 
-    function activateCRT() {
+    function activateCRT(startSeated = false) {
       if (isActive) return;
 
       const result = activate();
@@ -221,6 +228,23 @@ export default defineContentScript({
       rafId = requestAnimationFrame(renderLoop);
 
       isActive = true;
+
+      // If restoring a seated session, sit down immediately
+      if (startSeated && fps && sceneData) {
+        seated = true;
+        seatTransition = 1;
+        sceneData.camera.position.copy(SEATED_POS);
+        const lookMat = new THREE.Matrix4().lookAt(
+          SEATED_POS, SEATED_LOOK, new THREE.Vector3(0, 1, 0),
+        );
+        seatTargetQuat.setFromRotationMatrix(lookMat);
+        sceneData.camera.quaternion.copy(seatTargetQuat);
+        fps.enabled = false;
+        updateHUD();
+        // Defer transform until after first render so matrices are fully computed
+        requestAnimationFrame(() => applyScreenTransform());
+      }
+
       persistState();
     }
 
@@ -281,6 +305,7 @@ export default defineContentScript({
         seatTransition = 1;
         removeScreenTransform();
         fps.enabled = true;
+        persistState();
         setTimeout(() => {
           fps?.lock();
           updateHUD();
@@ -300,6 +325,7 @@ export default defineContentScript({
           fps.enabled = false;
           fps.unlock();
           updateHUD();
+          persistState();
           // Transform will be applied once camera reaches seated position
         }
       }
@@ -394,13 +420,14 @@ export default defineContentScript({
     }
 
     function persistState() {
-      chrome.storage.local.set({ crtState: { active: isActive } as CRTState });
+      chrome.storage.local.set({ crtState: { active: isActive, seated } as CRTState });
     }
 
     chrome.storage.local.get('crtState', (result) => {
-      if ((result.crtState as CRTState | undefined)?.active) {
-        console.log(TAG, 'Restoring active state');
-        activateCRT();
+      const state = result.crtState as CRTState | undefined;
+      if (state?.active) {
+        console.log(TAG, 'Restoring state, seated:', state.seated);
+        activateCRT(state.seated ?? false);
       }
     });
 
@@ -415,6 +442,14 @@ export default defineContentScript({
         }
       },
     );
+
+    // SPA navigation: page URL changes without full reload — keep scene, just re-upload texture
+    ctx.addEventListener(window, 'wxt:locationchange' as any, () => {
+      if (isActive) {
+        console.log(TAG, 'SPA navigation detected, re-uploading texture');
+        dirty = true;
+      }
+    });
 
     ctx.onInvalidated(() => {
       if (isActive) deactivateCRT();
