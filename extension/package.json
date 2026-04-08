@@ -1,5 +1,5 @@
 {
-  "name": "drunk-simulator",
+  "name": "crt-world",
   "private": true,
   "version": "1.0.0",
   "type": "module",
@@ -9,7 +9,10 @@
     "prepare": "wxt prepare"
   },
   "devDependencies": {
-    "wxt": "^0.20.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "wxt": "^0.20.0"
+  },
+  "dependencies": {
+    "three": "^0.183.2"
   }
 }

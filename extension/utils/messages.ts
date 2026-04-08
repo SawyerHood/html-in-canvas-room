@@ -1,6 +1,5 @@
 export type ToContentMessage = { type: 'toggle' } | { type: 'getState' };
 
-export interface DrunkState {
+export interface CRTState {
   active: boolean;
-  intensity: number;
 }

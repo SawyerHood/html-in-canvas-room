@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3D CRT World — HTML-in-Canvas Demo</title>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    }
+  }
+  </script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0a0a12; overflow: hidden; font-family: system-ui, sans-serif; }
+
+    /* Three.js scene canvas — full viewport */
+    #scene { display: block; width: 100vw; height: 100vh; }
+
+    /* Capture canvas — offscreen, holds page content for texture capture */
+    #capture {
+      position: fixed;
+      top: 0; left: 0;
+      width: 1024px; height: 768px;
+      pointer-events: none;
+      opacity: 0;
+      z-index: -1;
+    }
+
+    /* Page content inside capture canvas — styled as a retro website */
+    #page-content {
+      width: 1024px;
+      height: 768px;
+      overflow: hidden;
+      background: #1a1a2e;
+      color: #d0d0e0;
+      font-family: 'Courier New', monospace;
+      font-size: 14px;
+      padding: 0;
+    }
+
+    /* --- Retro page styling --- */
+    .page-header {
+      background: linear-gradient(180deg, #2a2a5a, #1a1a3e);
+      padding: 16px 24px;
+      border-bottom: 2px solid #4a4a8a;
+    }
+    .page-header h1 {
+      font-size: 22px;
+      color: #80ff80;
+      text-shadow: 0 0 10px rgba(128,255,128,0.3);
+      letter-spacing: 0.05em;
+    }
+    .page-header .tagline {
+      font-size: 12px;
+      color: #6a6a9a;
+      margin-top: 4px;
+    }
+    .page-nav {
+      background: #12122a;
+      padding: 8px 24px;
+      border-bottom: 1px solid #2a2a4a;
+      display: flex;
+      gap: 20px;
+    }
+    .page-nav a {
+      color: #60a0ff;
+      text-decoration: none;
+      font-size: 13px;
+    }
+    .page-nav a:hover { text-decoration: underline; }
+    .page-body {
+      display: flex;
+      height: calc(768px - 100px);
+    }
+    .page-main {
+      flex: 1;
+      padding: 20px 24px;
+      overflow-y: auto;
+      line-height: 1.7;
+    }
+    .page-main h2 {
+      color: #80c0ff;
+      font-size: 18px;
+      margin-bottom: 12px;
+      border-bottom: 1px solid #2a2a4a;
+      padding-bottom: 6px;
+    }
+    .page-main p {
+      margin-bottom: 14px;
+      color: #b0b0d0;
+    }
+    .page-main .highlight {
+      color: #80ff80;
+      font-weight: bold;
+    }
+    .page-main code {
+      background: #0a0a1a;
+      padding: 2px 6px;
+      border-radius: 3px;
+      color: #ffa060;
+      font-size: 13px;
+    }
+    .page-main .code-block {
+      background: #0a0a1a;
+      border: 1px solid #2a2a4a;
+      border-radius: 6px;
+      padding: 12px 16px;
+      margin: 12px 0;
+      font-size: 13px;
+      color: #c0c0e0;
+      line-height: 1.5;
+      white-space: pre;
+    }
+    .page-sidebar {
+      width: 240px;
+      background: #141428;
+      border-left: 1px solid #2a2a4a;
+      padding: 16px;
+    }
+    .page-sidebar h3 {
+      font-size: 13px;
+      color: #6a6a9a;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 10px;
+    }
+    .page-sidebar ul {
+      list-style: none;
+      padding: 0;
+    }
+    .page-sidebar li {
+      padding: 6px 0;
+      border-bottom: 1px solid #1a1a3a;
+      font-size: 12px;
+    }
+    .page-sidebar li a {
+      color: #60a0ff;
+      text-decoration: none;
+    }
+    .page-sidebar .stat {
+      display: flex;
+      justify-content: space-between;
+      padding: 4px 0;
+      font-size: 12px;
+    }
+    .page-sidebar .stat .label { color: #6a6a9a; }
+    .page-sidebar .stat .value { color: #80ff80; }
+    .page-footer {
+      background: #0a0a1a;
+      padding: 8px 24px;
+      font-size: 11px;
+      color: #4a4a6a;
+      border-top: 1px solid #2a2a4a;
+      position: absolute;
+      bottom: 0;
+      width: 100%;
+    }
+
+    /* Fallback */
+    #fallback {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #0a0a12;
+      color: #d0d0e0;
+      font-family: system-ui;
+      z-index: 100;
+    }
+    #fallback .box {
+      text-align: center;
+      max-width: 480px;
+      padding: 40px;
+      background: #14141f;
+      border: 1px solid #2a2a4a;
+      border-radius: 16px;
+    }
+    #fallback h1 { font-size: 20px; margin-bottom: 12px; color: #ff6b6b; }
+    #fallback p { font-size: 14px; color: #8888aa; line-height: 1.6; }
+    #fallback code { background: #1a1a2e; padding: 2px 6px; border-radius: 4px; color: #6366f1; font-size: 12px; }
+
+    /* Info overlay */
+    .info {
+      position: fixed;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(10,10,18,0.8);
+      color: #6a6a9a;
+      font-size: 12px;
+      padding: 8px 16px;
+      border-radius: 8px;
+      border: 1px solid #2a2a4a;
+      pointer-events: none;
+      z-index: 10;
+      font-family: system-ui;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="fallback" hidden>
+    <div class="box">
+      <h1>Browser Not Supported</h1>
+      <p>This demo requires Chrome Canary with the HTML-in-Canvas API.</p>
+      <p style="margin-top:12px">Enable <code>chrome://flags/#canvas-draw-element</code> and relaunch.</p>
+    </div>
+  </div>
+
+  <!-- Offscreen capture canvas with layoutsubtree — holds the "webpage" -->
+  <canvas id="capture" layoutsubtree width="1024" height="768">
+    <div id="page-content">
+      <div class="page-header">
+        <h1>&gt;_ TERMINAL.SYS</h1>
+        <div class="tagline">Retro Computing News &amp; Resources // Est. 1987</div>
+      </div>
+      <div class="page-nav">
+        <a href="#">/home</a>
+        <a href="#">/articles</a>
+        <a href="#">/hardware</a>
+        <a href="#">/software</a>
+        <a href="#">/bbs</a>
+        <a href="#">/about</a>
+      </div>
+      <div class="page-body">
+        <div class="page-main">
+          <h2>HTML-in-Canvas: Rendering the Web in 3D</h2>
+          <p>
+            A new <span class="highlight">WICG proposal</span> enables canvas elements to render
+            real DOM content directly. The <code>layoutsubtree</code> attribute on a canvas makes
+            its children participate in CSS layout while being painted exclusively through the
+            canvas API.
+          </p>
+          <p>
+            This means you can take any HTML — forms, text, images — and render it as a WebGL
+            texture. The DOM stays real: accessible, interactive, and styled by CSS.
+          </p>
+          <div class="code-block">// Capture HTML as a WebGL texture
+const ctx = canvas.getContext('2d');
+ctx.drawElementImage(myDiv, 0, 0);
+
+// Or for WebGL:
+gl.texElementImage2D(
+  gl.TEXTURE_2D, 0, gl.RGBA,
+  gl.RGBA, gl.UNSIGNED_BYTE, myDiv
+);</div>
+          <h2>What You're Seeing Right Now</h2>
+          <p>
+            This page is <span class="highlight">real HTML</span> rendered inside a 3D CRT
+            monitor using Three.js. The text you're reading is actual DOM content captured via
+            <code>drawElementImage()</code> and mapped as a texture onto a curved 3D screen
+            surface with CRT shader effects.
+          </p>
+          <p>
+            Drag to orbit the camera. Everything you see on the monitor screen is live-rendered
+            HTML, not a pre-baked image.
+          </p>
+        </div>
+        <div class="page-sidebar">
+          <h3>System Status</h3>
+          <div class="stat"><span class="label">Renderer</span><span class="value">Three.js</span></div>
+          <div class="stat"><span class="label">Texture</span><span class="value">1024x768</span></div>
+          <div class="stat"><span class="label">API</span><span class="value">HTML-in-Canvas</span></div>
+          <div class="stat"><span class="label">Monitor</span><span class="value">CRT 15"</span></div>
+          <h3 style="margin-top:16px">Recent Posts</h3>
+          <ul>
+            <li><a href="#">Building shaders for the web</a></li>
+            <li><a href="#">WebGPU vs WebGL: 2026 edition</a></li>
+            <li><a href="#">The return of CRT monitors</a></li>
+            <li><a href="#">CSS Houdini paint worklets</a></li>
+            <li><a href="#">Retro UI design patterns</a></li>
+            <li><a href="#">Browser APIs you didn't know</a></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </canvas>
+
+  <!-- Three.js 3D scene -->
+  <canvas id="scene"></canvas>
+
+  <div class="info">Drag to orbit &middot; Scroll to zoom &middot; Real HTML rendered on a 3D CRT</div>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>
