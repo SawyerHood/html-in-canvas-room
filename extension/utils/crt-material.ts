@@ -23,7 +23,7 @@ void main() {
   // 1. Barrel distortion
   vec2 center = uv - 0.5;
   float r2 = dot(center, center);
-  uv = uv + center * r2 * 0.2;
+  uv = uv + center * r2 * 0.12;
 
   // 2. Screen bounds mask
   float border = 0.02;

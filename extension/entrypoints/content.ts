@@ -7,7 +7,7 @@ import { FPSControls } from '@/utils/fps-controls';
 import type { ToContentMessage, CRTState } from '@/utils/messages';
 
 const TAG = '[CRTWorld]';
-const SEATED_POS = new THREE.Vector3(0, 1.1, 1.8);
+const SEATED_POS = new THREE.Vector3(0, 0.8, 1.8);
 const SEATED_LOOK = new THREE.Vector3(0, 0.8, 0);
 const DESK_CENTER = new THREE.Vector3(0, 0.8, 0.5);
 const SIT_DISTANCE = 3.5;
