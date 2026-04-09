@@ -106,7 +106,7 @@ void main() {
 
   // 8. PS1-style ordered dither + color quantization (always on)
   float brightness = dot(col, vec3(0.299, 0.587, 0.114));
-  float levels = mix(5.0, 48.0, smoothstep(0.3, 0.7, brightness)); // extra chunky in dark areas, smooth only on bright screens
+  float levels = mix(3.0, 12.0, smoothstep(0.2, 0.8, brightness)); // max crunch
   vec2 pixel = floor(gl_FragCoord.xy);
   int px = int(mod(pixel.x, 4.0));
   int py = int(mod(pixel.y, 4.0));

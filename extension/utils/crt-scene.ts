@@ -791,7 +791,7 @@ export function createScene(canvas: HTMLCanvasElement) {
   lampShade.position.set(3.5, 1.57, 3.5);
   scene.add(lampShade);
   // Warm light
-  const lampLight = new THREE.PointLight(0xffcc88, 2.0, 6, 1.5);
+  const lampLight = new THREE.PointLight(0xffcc88, 3.5, 8, 1.5);
   lampLight.position.set(3.5, 1.45, 3.5);
   scene.add(lampLight);
 
@@ -889,7 +889,7 @@ export function createScene(canvas: HTMLCanvasElement) {
   // ===== Lighting — well-lit gamer basement =====
 
   // Strong ambient so nothing is pitch black
-  scene.add(new THREE.AmbientLight(0x606070, 2.0));
+  scene.add(new THREE.AmbientLight(0x606070, 3.0));
 
   // CRT screen glow
   const screenGlow = new THREE.PointLight(0x88aadd, 5.0, 8, 1);
@@ -913,7 +913,7 @@ export function createScene(canvas: HTMLCanvasElement) {
   fixtureDome.position.set(0, ROOM_HEIGHT - 0.05, 0);
   scene.add(fixtureDome);
   // Light source inside the fixture
-  const overheadLight = new THREE.PointLight(0xeeddcc, 1.5, 12, 1);
+  const overheadLight = new THREE.PointLight(0xeeddcc, 3.0, 14, 1);
   overheadLight.position.set(0, ROOM_HEIGHT - 0.1, 0);
   scene.add(overheadLight);
 
@@ -1069,7 +1069,7 @@ export function createScene(canvas: HTMLCanvasElement) {
     ledGlow2.color.copy(ledColor2);
 
     // --- Overhead light subtle flicker ---
-    const flicker = 1.5 + Math.sin(time * 8.3) * 0.06 + Math.sin(time * 13.7) * 0.04;
+    const flicker = 3.0 + Math.sin(time * 8.3) * 0.03 + Math.sin(time * 13.7) * 0.02;
     overheadLight.intensity = flicker;
 
     // --- Wall clock — real time ---
