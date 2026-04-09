@@ -45,6 +45,7 @@ export default defineContentScript({
     let lastSnapshotTime = 0;
     let hasRenderedFirstFrame = false;
     let drunkIntensity = 0;
+    let drunkTarget = 0;
     let drunkPost: DrunkPostEffect | null = null;
     let beerCanGroup: THREE.Group | null = null;
     let drinkAnim = -1; // -1 = inactive, 0-1 = animating
@@ -363,7 +364,8 @@ export default defineContentScript({
       console.log(TAG, 'Activated');
 
       // Drunk post-processing (shader-based)
-      drunkIntensity = restored?.drunkIntensity ?? 0;
+      drunkTarget = restored?.drunkIntensity ?? 0;
+      drunkIntensity = drunkTarget;
       drunkPost = new DrunkPostEffect(
         window.innerWidth, window.innerHeight,
         renderer.toneMappingExposure,
@@ -511,6 +513,9 @@ export default defineContentScript({
 
     function onKeyDown(e: KeyboardEvent) {
       if (!fps || !sceneData) return;
+      const tag = (document.activeElement?.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select' ||
+          (document.activeElement as HTMLElement)?.isContentEditable) return;
 
       if (e.key === 'Escape' && seated) {
         e.preventDefault();
@@ -672,11 +677,12 @@ export default defineContentScript({
         }
       }
 
-      // Decay drunk intensity
-      if (drunkIntensity > 0) {
-        drunkIntensity = Math.max(0, drunkIntensity - dt / DECAY_DURATION);
-        if (Math.random() < 0.02) persistState();
+      // Decay drunk target and smoothly lerp intensity toward it
+      if (drunkTarget > 0) {
+        drunkTarget = Math.max(0, drunkTarget - dt / DECAY_DURATION);
       }
+      drunkIntensity += (drunkTarget - drunkIntensity) * Math.min(dt * 3, 1);
+      if (drunkIntensity > 0 && Math.random() < 0.02) persistState();
 
       // Animate held beer can
       if (beerCanGroup) {
@@ -684,7 +690,7 @@ export default defineContentScript({
           drinkAnim += dt * 2; // ~0.5s animation
           if (drinkAnim >= 1) {
             // Drinking complete — add drunkenness, keep can
-            drunkIntensity = Math.min(1.0, drunkIntensity + DRINK_AMOUNT);
+            drunkTarget = Math.min(1.0, drunkTarget + DRINK_AMOUNT);
             drinkAnim = -1;
             persistState();
           } else {
@@ -760,7 +766,7 @@ export default defineContentScript({
       const state: CRTState = {
         active: isActive,
         seated,
-        drunkIntensity,
+        drunkIntensity: drunkTarget,
         hasBeer: !!beerCanGroup,
         musicPlaying,
         musicRecord: selectedRecord,

@@ -28,14 +28,9 @@ vec3 aces(vec3 x) {
   return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
 }
 
-float drunkExposure() {
-  // Pull exposure down as the effect ramps up so bright pages do not wash out.
-  return mix(u_exposure, u_exposure * 0.55, clamp(u_intensity, 0.0, 1.0));
-}
-
 // Sample + tone map in one step so HDR spikes are compressed before mixing
 vec3 tm(vec2 coord) {
-  return aces(texture2D(u_texture, clamp(coord, 0.0, 1.0)).rgb * drunkExposure());
+  return aces(texture2D(u_texture, clamp(coord, 0.0, 1.0)).rgb * u_exposure);
 }
 
 void main() {
