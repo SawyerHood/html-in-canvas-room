@@ -178,6 +178,93 @@ export function createScene(canvas: HTMLCanvasElement) {
   peephole.position.set(doorX, 1.6, wallZ - 0.03);
   scene.add(peephole);
 
+  // ===== Low-poly palm tree in pot — right of door =====
+  const plantX = doorX - doorW / 2 - 0.7;
+  const plantZ = wallZ - 0.5;
+  // Pot
+  const plantPotMat = new THREE.MeshStandardMaterial({ color: 0xb0703a, roughness: 0.8 });
+  const floorPot = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.11, 0.28, 8), plantPotMat);
+  floorPot.position.set(plantX, 0.14, plantZ);
+  scene.add(floorPot);
+  // Dirt
+  const floorDirt = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.14, 0.14, 0.02, 8),
+    new THREE.MeshStandardMaterial({ color: 0x2a3a15, roughness: 0.95 }),
+  );
+  floorDirt.position.set(plantX, 0.29, plantZ);
+  scene.add(floorDirt);
+  // Chunky segmented trunk
+  const trunkDarkMat = new THREE.MeshStandardMaterial({ color: 0x4a3820, roughness: 0.9 });
+  const trunkLightMat = new THREE.MeshStandardMaterial({ color: 0x5a4a2a, roughness: 0.85 });
+  const segments = 8;
+  const trunkHeight = 1.4;
+  const segH = trunkHeight / segments;
+  for (let si = 0; si < segments; si++) {
+    const t = si / segments;
+    const radius = 0.04 - t * 0.015; // taper from 0.04 to 0.025
+    const seg = new THREE.Mesh(
+      new THREE.CylinderGeometry(radius - 0.005, radius, segH * 0.95, 6),
+      si % 2 === 0 ? trunkDarkMat : trunkLightMat,
+    );
+    seg.position.set(plantX, 0.30 + si * segH + segH / 2, plantZ);
+    scene.add(seg);
+  }
+  // Coconut-like bulge at very top
+  const topBulge = new THREE.Mesh(
+    new THREE.SphereGeometry(0.04, 6, 4),
+    new THREE.MeshStandardMaterial({ color: 0x3a6a1a, roughness: 0.7 }),
+  );
+  const palmTopY = 0.30 + trunkHeight + 0.02;
+  topBulge.position.set(plantX, palmTopY, plantZ);
+  scene.add(topBulge);
+
+  // Fronds — each is 3 triangles (stem + left leaf + right leaf) for a fuller look
+  const frondMat = new THREE.MeshStandardMaterial({ color: 0x3a8a22, roughness: 0.7, side: THREE.DoubleSide });
+  const frondDarkMat = new THREE.MeshStandardMaterial({ color: 0x2a6a18, roughness: 0.7, side: THREE.DoubleSide });
+  const frondCount = 7;
+  for (let fi = 0; fi < frondCount; fi++) {
+    const angle = (fi / frondCount) * Math.PI * 2 + 0.2;
+    const frondLen = 0.45 + Math.random() * 0.1;
+    const droop = 0.3 + Math.random() * 0.25;
+    const mat = fi % 2 === 0 ? frondMat : frondDarkMat;
+    const frondGroup = new THREE.Group();
+    frondGroup.position.set(plantX, palmTopY + 0.02, plantZ);
+    frondGroup.rotation.y = angle;
+
+    // Center stem triangle
+    const stemGeo = new THREE.BufferGeometry();
+    stemGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
+      0, 0, 0,
+      -0.01, -frondLen * droop, frondLen,
+      0.01, -frondLen * droop, frondLen,
+    ]), 3));
+    stemGeo.computeVertexNormals();
+    frondGroup.add(new THREE.Mesh(stemGeo, mat));
+
+    // Left leaflets
+    const leftGeo = new THREE.BufferGeometry();
+    leftGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
+      0, 0, frondLen * 0.15,
+      -0.12, -frondLen * droop * 0.6, frondLen * 0.5,
+      -0.02, -frondLen * droop * 0.8, frondLen * 0.75,
+    ]), 3));
+    leftGeo.computeVertexNormals();
+    frondGroup.add(new THREE.Mesh(leftGeo, mat));
+
+    // Right leaflets
+    const rightGeo = new THREE.BufferGeometry();
+    rightGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
+      0, 0, frondLen * 0.15,
+      0.12, -frondLen * droop * 0.6, frondLen * 0.5,
+      0.02, -frondLen * droop * 0.8, frondLen * 0.75,
+    ]), 3));
+    rightGeo.computeVertexNormals();
+    frondGroup.add(new THREE.Mesh(rightGeo, mat));
+
+    scene.add(frondGroup);
+  }
+  addCollider(plantX, plantZ, 0.25, 0.25); // palm tree
+
   // Left wall — open to city view with window frame/ledge for depth
   const frameMat = new THREE.MeshStandardMaterial({ color: 0x222230, roughness: 0.7 });
   const wallX = -ROOM_SIZE / 2;
