@@ -11,8 +11,6 @@ import type { ToContentMessage, CRTState } from '@/utils/messages';
 const TAG = '[CRTWorld]';
 const SEATED_POS = new THREE.Vector3(0, SCREEN_CENTER_Y, SCREEN_CENTER_Z + 0.45);
 const SEATED_LOOK = new THREE.Vector3(0, SCREEN_CENTER_Y, SCREEN_CENTER_Z);
-const DESK_CENTER = new THREE.Vector3(0, SCREEN_CENTER_Y, -2.5);
-const SIT_DISTANCE = 5.0;
 const HUD_ID = '__crt-hud';
 const DECAY_DURATION = 60; // seconds from 100% to 0%
 const DRINK_AMOUNT = 0.34; // each chug adds ~34%, 3 drinks to blackout
@@ -54,6 +52,9 @@ export default defineContentScript({
     let musicPlaying = false;
     let musicIframe: HTMLIFrameElement | null = null;
     let nearRecordPlayer = false;
+    const raycaster = new THREE.Raycaster();
+    raycaster.far = 4; // max interaction distance
+    let interactTarget: string | null = null;
     let selectedRecord = 0;
     let playingRecord = -1;
 
@@ -235,15 +236,17 @@ export default defineContentScript({
       } else if (!fps?.isLocked) {
         hud.classList.remove('seated');
         prompt.innerHTML = 'Click to look around &middot; <kbd>WASD</kbd> to move';
-      } else if (nearRecordPlayer && sceneData) {
+      } else if (interactTarget === 'record' && sceneData) {
         hud.classList.remove('seated');
         const rec = sceneData.records[selectedRecord];
         prompt.innerHTML =
           `<kbd>&larr;</kbd><kbd>&rarr;</kbd> browse &middot; <kbd>E</kbd> play &middot; ${rec.name}` + beerHint;
-      } else if (lookingAtDesk) {
+      } else if (interactTarget === 'beer' && !beerCanGroup) {
         hud.classList.remove('seated');
-        const action = beerCanGroup ? 'sit down' : 'grab a beer';
-        prompt.innerHTML = `<kbd>E</kbd> ${action}` + beerHint;
+        prompt.innerHTML = '<kbd>E</kbd> grab a beer' + beerHint;
+      } else if (interactTarget === 'sit') {
+        hud.classList.remove('seated');
+        prompt.innerHTML = '<kbd>E</kbd> sit down' + beerHint;
       } else {
         hud.classList.remove('seated');
         prompt.innerHTML = '<kbd>WASD</kbd> to move' + beerHint;
@@ -685,22 +688,20 @@ export default defineContentScript({
       }
 
       if (e.key === 'e' || e.key === 'E') {
-        if (seated || !fps.isLocked) return;
-        // Universal interact: pick best target based on proximity + look direction
-        if (nearRecordPlayer) {
+        if (seated || !fps.isLocked || !interactTarget) return;
+
+        if (interactTarget === 'record') {
           if (musicPlaying && playingRecord === selectedRecord) stopMusic();
           else playRecord(selectedRecord);
-        } else if (lookingAtDesk && !beerCanGroup && sceneData) {
-          // Near desk with no beer — grab one
+        } else if (interactTarget === 'beer' && !beerCanGroup && sceneData) {
           beerCanGroup = createBeerCanMesh();
           sceneData.camera.add(beerCanGroup);
           updateHUD();
-        } else if (lookingAtDesk) {
-          // Near desk with beer — sit down
+        } else if (interactTarget === 'sit') {
           seated = true;
           seatTransition = 0;
-          seatStartPos.copy(sceneData.camera.position);
-          seatStartQuat.copy(sceneData.camera.quaternion);
+          seatStartPos.copy(sceneData!.camera.position);
+          seatStartQuat.copy(sceneData!.camera.quaternion);
           const lookMat = new THREE.Matrix4().lookAt(
             SEATED_POS, SEATED_LOOK, new THREE.Vector3(0, 1, 0),
           );
@@ -781,23 +782,16 @@ export default defineContentScript({
         }
         fps.update(dt);
 
-        // Proximity + facing check for sit prompt
-        const cam = sceneData.camera;
-        const distToDesk = cam.position.distanceTo(DESK_CENTER);
-        const toDesk = new THREE.Vector3().subVectors(DESK_CENTER, cam.position).normalize();
-        const lookDir = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
-        const dot = toDesk.dot(lookDir);
-        const wasLooking = lookingAtDesk;
-        lookingAtDesk = dot > 0.3 && distToDesk < SIT_DISTANCE;
-        if (lookingAtDesk !== wasLooking) updateHUD();
-
-        // Record player proximity
-        const wasNearRP = nearRecordPlayer;
-        nearRecordPlayer = cam.position.distanceTo(sceneData.recordPlayerPos) < 2.5;
-        if (nearRecordPlayer !== wasNearRP) {
-          updateRecordSelection();
-          updateHUD();
-        }
+        // Raycast from crosshair to find interactable
+        raycaster.setFromCamera(new THREE.Vector2(0, 0), sceneData.camera);
+        const hits = raycaster.intersectObjects(sceneData.interactables);
+        const prevTarget = interactTarget;
+        const prevNearRP = nearRecordPlayer;
+        interactTarget = hits.length > 0 ? hits[0].object.userData.interaction : null;
+        lookingAtDesk = interactTarget === 'sit' || interactTarget === 'beer';
+        nearRecordPlayer = interactTarget === 'record';
+        if (interactTarget !== prevTarget) updateHUD();
+        if (nearRecordPlayer !== prevNearRP) updateRecordSelection();
       }
 
       // Blackout sequence

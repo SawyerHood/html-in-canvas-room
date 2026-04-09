@@ -1106,14 +1106,23 @@ export function createScene(canvas: HTMLCanvasElement) {
     scene.add(shoeGroup);
   }
 
-  // ===== Interaction Zone (unchanged) =====
-  const interactionZone = new THREE.Mesh(
-    new THREE.BoxGeometry(4.0, 4.0, 4.0),
-    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }),
-  );
-  interactionZone.position.set(0, 1.2, -3.0);
-  interactionZone.name = 'interactionZone';
-  scene.add(interactionZone);
+  // ===== Interactable raycast targets (invisible meshes) =====
+  const interactMat = new THREE.MeshBasicMaterial({ visible: false });
+  const interactables: THREE.Mesh[] = [];
+
+  function addInteractable(name: string, pos: [number, number, number], size: [number, number, number]) {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), interactMat);
+    mesh.position.set(...pos);
+    mesh.userData.interaction = name;
+    scene.add(mesh);
+    interactables.push(mesh);
+    return mesh;
+  }
+
+  addInteractable('sit', [0, 1.0, -2.5], [2.0, 1.5, 2.0]);           // desk/chair area
+  addInteractable('beer', [-0.65, DESK_TOP + 0.1, -2.9], [0.5, 0.3, 0.4]); // left beer cans
+  addInteractable('beer', [0.8, DESK_TOP + 0.1, -3.0], [0.5, 0.4, 0.5]);  // right beer can
+  addInteractable('record', [0, 0.4, ROOM_SIZE / 2 - 0.3], [1.5, 1.0, 0.8]); // record cabinet
 
   // ===== Lighting — well-lit gamer basement =====
 
@@ -1328,12 +1337,9 @@ export function createScene(canvas: HTMLCanvasElement) {
   }
   window.addEventListener('resize', onResize);
 
-  // Record player position for interaction
-  const recordPlayerPos = new THREE.Vector3(0, 0.5, ROOM_SIZE / 2 - 0.3);
-
   return {
-    renderer, scene, camera, screenMesh, interactionZone, onResize, animate, colliders,
-    vinyl, tonearmGroup, recordPlayerPos, labelDisc,
+    renderer, scene, camera, screenMesh, interactables, onResize, animate, colliders,
+    vinyl, tonearmGroup, labelDisc,
     records: RECORDS, recordMeshes, selectedIndicator,
   };
 }
