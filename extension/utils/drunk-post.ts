@@ -97,9 +97,9 @@ void main() {
 
   // 6. Vignette + overall dim
   vec2 center = vUv - 0.5;
-  float vig = 1.0 - dot(center, center) * 3.0 * fx;
+  float vig = 1.0 - dot(center, center) * 1.5 * fx;
   col *= clamp(vig, 0.0, 1.0);
-  col *= 1.0 - fx * 0.38;
+  col *= 1.0 - fx * 0.15;
 
   // 7. Linear -> sRGB before dither (so dithering happens in perceptual space)
   col = pow(col, vec3(1.0 / 2.2));
