@@ -1,23 +1,59 @@
 import * as THREE from 'three';
+import { CITY_BACKDROP_URL } from './skybox-data';
 
 export function createScene(canvas: HTMLCanvasElement) {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
   renderer.setPixelRatio(window.devicePixelRatio);
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.8;
+  renderer.toneMappingExposure = 3.0;
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x0a0a14);
+
+  // Dark night sky background
+  scene.background = new THREE.Color(0x1c1d4a); // matches the sky in the city photo
+
+  // City backdrop — large plane placed outside the open left wall
+  const cityImg = new Image();
+  cityImg.onload = () => {
+    const tex = new THREE.Texture(cityImg);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.needsUpdate = true;
+
+    // City backdrop — curved cylinder with vertical curvature (dome-like)
+    const backdropDist = 100;
+    const backdropH = 120;
+    const backdropArc = Math.PI * 1.2; // 216° arc — wide panorama wraps around
+    const backdropGeom = new THREE.CylinderGeometry(
+      backdropDist, backdropDist, backdropH, 64, 16, true,
+      -Math.PI / 2 - backdropArc / 2,
+      backdropArc,
+    );
+    // Flip UVs horizontally so texture isn't mirrored
+    const uvs = backdropGeom.attributes.uv;
+    for (let i = 0; i < uvs.count; i++) uvs.setX(i, 1 - uvs.getX(i));
+    const backdrop = new THREE.Mesh(
+      backdropGeom,
+      new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide }),
+    );
+    backdrop.position.set(-ROOM_SIZE / 2, backdropH / 2 - 68, 0);
+    scene.add(backdrop);
+    console.log('[CRTWorld] Backdrop added, dist:', backdropDist, 'height:', backdropH);
+
+
+    console.log('[CRTWorld] City backdrop loaded');
+  };
+  cityImg.src = CITY_BACKDROP_URL;
 
   const camera = new THREE.PerspectiveCamera(
     65,
     window.innerWidth / window.innerHeight,
     0.1,
-    100,
+    500,
   );
   camera.position.set(0, 1.6, 3);
   camera.lookAt(0, 0.5, 0);
+  scene.add(camera); // camera must be in scene for children (held items) to render
 
   const ROOM_SIZE = 8;
   const ROOM_HEIGHT = 3;
@@ -60,13 +96,9 @@ export function createScene(canvas: HTMLCanvasElement) {
   }
 
   // ===== Walls =====
-  // Side walls — dark blue-gray
-  const sideWallMat = new THREE.MeshStandardMaterial({ color: 0x1a1a28, roughness: 0.85 });
-  const leftWall = new THREE.Mesh(new THREE.PlaneGeometry(ROOM_SIZE, ROOM_HEIGHT), sideWallMat);
-  leftWall.position.set(-ROOM_SIZE / 2, ROOM_HEIGHT / 2, 0);
-  leftWall.rotation.y = Math.PI / 2;
-  scene.add(leftWall);
+  const sideWallMat = new THREE.MeshStandardMaterial({ color: 0x2a2a38, roughness: 0.85 });
 
+  // Right wall — solid
   const rightWall = new THREE.Mesh(new THREE.PlaneGeometry(ROOM_SIZE, ROOM_HEIGHT), sideWallMat);
   rightWall.position.set(ROOM_SIZE / 2, ROOM_HEIGHT / 2, 0);
   rightWall.rotation.y = -Math.PI / 2;
@@ -75,11 +107,75 @@ export function createScene(canvas: HTMLCanvasElement) {
   // Front wall (behind player)
   const frontWall = new THREE.Mesh(
     new THREE.PlaneGeometry(ROOM_SIZE, ROOM_HEIGHT),
-    new THREE.MeshStandardMaterial({ color: 0x181822, roughness: 0.85 }),
+    new THREE.MeshStandardMaterial({ color: 0x242430, roughness: 0.85 }),
   );
   frontWall.position.set(0, ROOM_HEIGHT / 2, ROOM_SIZE / 2);
   frontWall.rotation.y = Math.PI;
   scene.add(frontWall);
+
+  // Left wall — open to city view with window frame/ledge for depth
+  const frameMat = new THREE.MeshStandardMaterial({ color: 0x222230, roughness: 0.7 });
+  const wallX = -ROOM_SIZE / 2;
+
+  // Top beam + exterior overhang (blocks view of sky above)
+  const topBeam = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, ROOM_SIZE), frameMat);
+  topBeam.position.set(wallX, ROOM_HEIGHT - 0.075, 0);
+  scene.add(topBeam);
+  const topOverhang = new THREE.Mesh(
+    new THREE.BoxGeometry(3, 0.08, ROOM_SIZE + 6),
+    new THREE.MeshStandardMaterial({ color: 0x181820, roughness: 0.9 }),
+  );
+  topOverhang.position.set(wallX - 1.5, ROOM_HEIGHT - 0.04, 0);
+  scene.add(topOverhang);
+
+  // Bottom ledge + exterior lip (blocks view of ground below)
+  const ledgeMat = new THREE.MeshStandardMaterial({ color: 0x2a2a35, roughness: 0.6 });
+  const ledge = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.06, ROOM_SIZE), ledgeMat);
+  ledge.position.set(wallX + 0.1, 0.8, 0);
+  scene.add(ledge);
+  const bottomOverhang = new THREE.Mesh(
+    new THREE.BoxGeometry(3, 0.08, ROOM_SIZE + 6),
+    new THREE.MeshStandardMaterial({ color: 0x181820, roughness: 0.9 }),
+  );
+  bottomOverhang.position.set(wallX - 1.5, 0.0, 0);
+  scene.add(bottomOverhang);
+
+  // Bottom wall section (below the window line)
+  const bottomWall = new THREE.Mesh(
+    new THREE.PlaneGeometry(ROOM_SIZE, 0.8),
+    sideWallMat,
+  );
+  bottomWall.position.set(wallX, 0.4, 0);
+  bottomWall.rotation.y = Math.PI / 2;
+  scene.add(bottomWall);
+
+  // Vertical mullions (3 pillars dividing the window)
+  for (const mz of [-ROOM_SIZE / 4, 0, ROOM_SIZE / 4]) {
+    const mullion = new THREE.Mesh(new THREE.BoxGeometry(0.08, ROOM_HEIGHT - 0.8, 0.06), frameMat);
+    mullion.position.set(wallX, 0.8 + (ROOM_HEIGHT - 0.8) / 2, mz);
+    scene.add(mullion);
+  }
+
+  // Baseboard under window wall
+  const windowBaseboard = new THREE.Mesh(
+    new THREE.BoxGeometry(0.04, 0.12, ROOM_SIZE),
+    new THREE.MeshStandardMaterial({ color: 0x0a0a10, roughness: 0.7 }),
+  );
+  windowBaseboard.position.set(wallX + 0.02, 0.06, 0);
+  scene.add(windowBaseboard);
+
+  // Add window light from the left side
+  const windowLight1 = new THREE.SpotLight(0x8899bb, 3, 10, Math.PI / 3, 0.5, 1.2);
+  windowLight1.position.set(-ROOM_SIZE / 2, 2, -1.5);
+  windowLight1.target.position.set(0, 0, -1.5);
+  scene.add(windowLight1);
+  scene.add(windowLight1.target);
+
+  const windowLight2 = new THREE.SpotLight(0x8899bb, 3, 10, Math.PI / 3, 0.5, 1.2);
+  windowLight2.position.set(-ROOM_SIZE / 2, 2, 1.5);
+  windowLight2.target.position.set(0, 0, 1.5);
+  scene.add(windowLight2);
+  scene.add(windowLight2.target);
 
   // ===== Back wall — exposed brick accent =====
   const backWallBase = new THREE.Mesh(
@@ -92,7 +188,7 @@ export function createScene(canvas: HTMLCanvasElement) {
   // Brick rows
   const brickW = 0.28, brickH = 0.1, brickD = 0.04, mortarGap = 0.03;
   const brickColors = [0x3a2020, 0x4a2a2a, 0x3d2525, 0x452828, 0x382020];
-  for (let row = 0; row < 18; row++) {
+  for (let row = 0; row < 24; row++) {
     const y = row * (brickH + mortarGap) + brickH / 2 + 0.05;
     if (y > ROOM_HEIGHT) break;
     const offset = row % 2 === 0 ? 0 : (brickW + mortarGap) / 2;
@@ -109,13 +205,28 @@ export function createScene(canvas: HTMLCanvasElement) {
     }
   }
 
+  // Vertical corner trim where brick wall meets side walls
+  const cornerTrimMat = new THREE.MeshStandardMaterial({ color: 0x1a1a20, roughness: 0.7 });
+  const cornerTrimR = new THREE.Mesh(
+    new THREE.BoxGeometry(0.06, ROOM_HEIGHT, 0.06),
+    cornerTrimMat,
+  );
+  cornerTrimR.position.set(ROOM_SIZE / 2 - 0.03, ROOM_HEIGHT / 2, -ROOM_SIZE / 2 + 0.03);
+  scene.add(cornerTrimR);
+  // Left corner (where brick wall meets open left wall area)
+  const cornerTrimL = new THREE.Mesh(
+    new THREE.BoxGeometry(0.06, ROOM_HEIGHT, 0.06),
+    cornerTrimMat,
+  );
+  cornerTrimL.position.set(-ROOM_SIZE / 2 + 0.03, ROOM_HEIGHT / 2, -ROOM_SIZE / 2 + 0.03);
+  scene.add(cornerTrimL);
+
   // Baseboard trim
   const trimMat = new THREE.MeshStandardMaterial({ color: 0x0a0a10, roughness: 0.7 });
   const trimGeom = new THREE.BoxGeometry(ROOM_SIZE, 0.12, 0.04);
   for (const [x, z, ry] of [
     [0, -ROOM_SIZE / 2 + 0.02, 0],
     [0, ROOM_SIZE / 2 - 0.02, 0],
-    [-ROOM_SIZE / 2 + 0.02, 0, Math.PI / 2],
     [ROOM_SIZE / 2 - 0.02, 0, Math.PI / 2],
   ] as [number, number, number][]) {
     const trim = new THREE.Mesh(trimGeom, trimMat);
@@ -180,18 +291,18 @@ export function createScene(canvas: HTMLCanvasElement) {
 
   // Position group so stand sits on desk surface
   const DESK_TOP = 0.75; // desk surface height
-  monitorGroup.position.set(0, DESK_TOP, 0.1);
+  monitorGroup.position.set(0, DESK_TOP, -3.2);
   scene.add(monitorGroup);
 
   // ===== Gaming Desk — black =====
   const deskMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.6, metalness: 0.1 });
   const deskMesh = new THREE.Mesh(new THREE.BoxGeometry(3, 0.06, 1.5), deskMat);
-  deskMesh.position.set(0, DESK_TOP, 0.4);
+  deskMesh.position.set(0, DESK_TOP, -3.25);
   scene.add(deskMesh);
 
   const legMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.5, metalness: 0.3 });
   const legGeom = new THREE.BoxGeometry(0.06, DESK_TOP, 0.06);
-  for (const [x, z] of [[-1.4, -0.25], [1.4, -0.25], [-1.4, 1.05], [1.4, 1.05]]) {
+  for (const [x, z] of [[-1.4, -3.9], [1.4, -3.9], [-1.4, -2.6], [1.4, -2.6]]) {
     const leg = new THREE.Mesh(legGeom, legMat);
     leg.position.set(x, DESK_TOP / 2, z);
     scene.add(leg);
@@ -204,11 +315,11 @@ export function createScene(canvas: HTMLCanvasElement) {
       color: 0x00ffcc, emissive: 0x00ffcc, emissiveIntensity: 2.0, roughness: 0.2,
     }),
   );
-  ledStrip.position.set(0, DESK_TOP - 0.02, -0.3);
+  ledStrip.position.set(0, DESK_TOP - 0.02, -3.95);
   scene.add(ledStrip);
 
   const ledGlow = new THREE.PointLight(0x00ddbb, 1.5, 4, 2);
-  ledGlow.position.set(0, DESK_TOP - 0.3, -0.1);
+  ledGlow.position.set(0, DESK_TOP - 0.3, -3.75);
   scene.add(ledGlow);
 
   // Second LED strip under desk front edge
@@ -218,21 +329,21 @@ export function createScene(canvas: HTMLCanvasElement) {
       color: 0x8800ff, emissive: 0x8800ff, emissiveIntensity: 1.5, roughness: 0.2,
     }),
   );
-  ledStrip2.position.set(0, DESK_TOP - 0.02, 1.1);
+  ledStrip2.position.set(0, DESK_TOP - 0.02, -2.55);
   scene.add(ledStrip2);
 
   const ledGlow2 = new THREE.PointLight(0x7700dd, 0.8, 3, 2);
-  ledGlow2.position.set(0, DESK_TOP - 0.3, 1.2);
+  ledGlow2.position.set(0, DESK_TOP - 0.3, -2.45);
   scene.add(ledGlow2);
 
   // ===== Peripherals — dark to match gaming desk =====
   const peripheralMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.7 });
   const kbMesh = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.02, 0.18), peripheralMat);
-  kbMesh.position.set(0, DESK_TOP + 0.04, 0.7);
+  kbMesh.position.set(0, DESK_TOP + 0.04, -2.7);
   scene.add(kbMesh);
 
   const mouseMesh = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.02, 0.12), peripheralMat);
-  mouseMesh.position.set(0.4, DESK_TOP + 0.04, 0.7);
+  mouseMesh.position.set(0.4, DESK_TOP + 0.04, -2.65);
   scene.add(mouseMesh);
 
   // ===== Gaming Chair — black with red accents =====
@@ -240,22 +351,22 @@ export function createScene(canvas: HTMLCanvasElement) {
   const chairRed = new THREE.MeshStandardMaterial({ color: 0xcc2222, roughness: 0.6 });
 
   const chairSeat = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.06, 0.6), chairBlack);
-  chairSeat.position.set(0, 0.5, 2.0);
+  chairSeat.position.set(0, 0.5, -1.6);
   scene.add(chairSeat);
   // Red trim on seat edges
   const seatTrimL = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.08, 0.6), chairRed);
-  seatTrimL.position.set(-0.35, 0.5, 2.0);
+  seatTrimL.position.set(-0.35, 0.5, -1.6);
   scene.add(seatTrimL);
   const seatTrimR = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.08, 0.6), chairRed);
-  seatTrimR.position.set(0.35, 0.5, 2.0);
+  seatTrimR.position.set(0.35, 0.5, -1.6);
   scene.add(seatTrimR);
 
   const chairBack = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.8, 0.06), chairBlack);
-  chairBack.position.set(0, 0.92, 2.3);
+  chairBack.position.set(0, 0.92, -1.3);
   scene.add(chairBack);
   // Red stripe on chair back
   const backStripe = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.6, 0.07), chairRed);
-  backStripe.position.set(0, 0.92, 2.31);
+  backStripe.position.set(0, 0.92, -1.29);
   scene.add(backStripe);
 
   // Chair base — star base with cylinder
@@ -263,7 +374,7 @@ export function createScene(canvas: HTMLCanvasElement) {
     new THREE.CylinderGeometry(0.04, 0.04, 0.45, 8),
     new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.3, metalness: 0.7 }),
   );
-  chairPole.position.set(0, 0.25, 2.15);
+  chairPole.position.set(0, 0.25, -1.45);
   scene.add(chairPole);
   // Star base arms
   for (let i = 0; i < 5; i++) {
@@ -275,7 +386,7 @@ export function createScene(canvas: HTMLCanvasElement) {
     arm.position.set(
       Math.sin(angle) * 0.15,
       0.03,
-      2.15 + Math.cos(angle) * 0.15,
+      -1.45 + Math.cos(angle) * 0.15,
     );
     arm.rotation.y = -angle;
     scene.add(arm);
@@ -330,7 +441,7 @@ export function createScene(canvas: HTMLCanvasElement) {
     new THREE.CylinderGeometry(0.04, 0.05, 0.06, 12),
     new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.4, metalness: 0.5 }),
   );
-  lavaBase.position.set(0.3, 1.78, 0.25);
+  lavaBase.position.set(0.3, 1.13, 0.25);
   shelfGroup.add(lavaBase);
   const lavaBody = new THREE.Mesh(
     new THREE.CylinderGeometry(0.03, 0.04, 0.2, 12),
@@ -343,41 +454,68 @@ export function createScene(canvas: HTMLCanvasElement) {
       opacity: 0.85,
     }),
   );
-  lavaBody.position.set(0.3, 1.92, 0.25);
+  lavaBody.position.set(0.3, 1.27, 0.25);
   shelfGroup.add(lavaBody);
   const lavaCap = new THREE.Mesh(
     new THREE.CylinderGeometry(0.02, 0.03, 0.04, 12),
     new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.4, metalness: 0.5 }),
   );
-  lavaCap.position.set(0.3, 2.04, 0.25);
+  lavaCap.position.set(0.3, 1.39, 0.25);
   shelfGroup.add(lavaCap);
 
-  shelfGroup.position.set(-ROOM_SIZE / 2 + 0.7, 0, -1.5);
+  // Plant on top shelf
+  const potMat = new THREE.MeshStandardMaterial({ color: 0x884430, roughness: 0.8 });
+  const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.05, 0.08, 12), potMat);
+  pot.position.set(-0.3, 1.98 + 0.04, 0.25);
+  shelfGroup.add(pot);
+  // Dirt
+  const dirt = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.055, 0.055, 0.02, 12),
+    new THREE.MeshStandardMaterial({ color: 0x3a2a15, roughness: 0.95 }),
+  );
+  dirt.position.set(-0.3, 1.98 + 0.09, 0.25);
+  shelfGroup.add(dirt);
+  // Leaves — small green spheres
+  const leafMat = new THREE.MeshStandardMaterial({ color: 0x2d6a1e, roughness: 0.8 });
+  for (const [lx, ly, lz, ls] of [
+    [0, 0.12, 0, 0.06],
+    [-0.04, 0.09, 0.03, 0.04],
+    [0.03, 0.10, -0.02, 0.045],
+    [-0.02, 0.14, -0.01, 0.035],
+    [0.02, 0.08, 0.02, 0.038],
+  ] as [number, number, number, number][]) {
+    const leaf = new THREE.Mesh(new THREE.SphereGeometry(ls, 8, 6), leafMat);
+    leaf.position.set(-0.3 + lx, 1.98 + ly, 0.25 + lz);
+    shelfGroup.add(leaf);
+  }
+
+  shelfGroup.position.set(2.2, 0, -ROOM_SIZE / 2 + 0.25);
+  shelfGroup.rotation.y = 0;
   scene.add(shelfGroup);
 
   // Lava lamp glow light
   const lavaGlow = new THREE.PointLight(0xff5010, 0.8, 3, 2);
-  lavaGlow.position.set(-ROOM_SIZE / 2 + 1.0, 1.9, -1.25);
+  lavaGlow.position.set(2.5, 1.3, -ROOM_SIZE / 2 + 0.5);
   scene.add(lavaGlow);
 
   // ===== Mini fridge — right of desk =====
   const fridgeMat = new THREE.MeshStandardMaterial({ color: 0xa0a0a0, roughness: 0.4, metalness: 0.2 });
   const fridge = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.7, 0.45), fridgeMat);
-  fridge.position.set(2.8, 0.35, 0.5);
+  fridge.position.set(1.0, 0.35, -3.3);
   scene.add(fridge);
   // Door line
   const fridgeDoor = new THREE.Mesh(
     new THREE.BoxGeometry(0.48, 0.01, 0.43),
     new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.5 }),
   );
-  fridgeDoor.position.set(2.8, 0.55, 0.5);
+  fridgeDoor.position.set(1.0, 0.55, -3.3);
   scene.add(fridgeDoor);
   // Handle
   const fridgeHandle = new THREE.Mesh(
     new THREE.BoxGeometry(0.03, 0.15, 0.03),
     new THREE.MeshStandardMaterial({ color: 0x666666, roughness: 0.3, metalness: 0.6 }),
   );
-  fridgeHandle.position.set(3.02, 0.55, 0.5);
+  fridgeHandle.position.set(1.0, 0.55, -3.08);
   scene.add(fridgeHandle);
 
   // ===== Pizza box on desk =====
@@ -385,44 +523,27 @@ export function createScene(canvas: HTMLCanvasElement) {
     new THREE.BoxGeometry(0.35, 0.04, 0.35),
     new THREE.MeshStandardMaterial({ color: 0xc4a060, roughness: 0.9 }),
   );
-  pizzaBox.position.set(-1.0, DESK_TOP + 0.04, 0.5);
+  pizzaBox.position.set(-1.0, DESK_TOP + 0.04, -3.1);
   scene.add(pizzaBox);
 
-  // ===== Soda cans on desk =====
-  const canMat = new THREE.MeshStandardMaterial({ color: 0xdd2222, roughness: 0.3, metalness: 0.5 });
-  for (const [cx, cz] of [[-0.8, 0.7], [-0.6, 0.55], [0.9, 0.6]]) {
+  // ===== Beer cans on desk =====
+  const canMat = new THREE.MeshStandardMaterial({ color: 0xc8a84e, roughness: 0.3, metalness: 0.5 });
+  for (const [cx, cz] of [[-0.8, -2.9], [-0.6, -3.05], [0.9, -3.0]]) {
     const can = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.1, 12), canMat);
     can.position.set(cx, DESK_TOP + 0.08, cz);
     scene.add(can);
   }
   // Knocked over can
   const knockedCan = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.1, 12), canMat);
-  knockedCan.position.set(-0.5, DESK_TOP + 0.04, 0.75);
+  knockedCan.position.set(-0.5, DESK_TOP + 0.04, -2.85);
   knockedCan.rotation.z = Math.PI / 2;
   scene.add(knockedCan);
 
   // ===== Headphones on desk =====
-  const hpMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.6 });
-  const hpBand = new THREE.Mesh(
-    new THREE.TorusGeometry(0.08, 0.01, 8, 24, Math.PI),
-    hpMat,
-  );
-  hpBand.position.set(0.9, DESK_TOP + 0.12, 0.3);
-  hpBand.rotation.x = Math.PI;
-  scene.add(hpBand);
-  const hpCupL = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.025, 12), hpMat);
-  hpCupL.position.set(0.82, DESK_TOP + 0.04, 0.3);
-  hpCupL.rotation.z = Math.PI / 2;
-  scene.add(hpCupL);
-  const hpCupR = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.025, 12), hpMat);
-  hpCupR.position.set(0.98, DESK_TOP + 0.04, 0.3);
-  hpCupR.rotation.z = Math.PI / 2;
-  scene.add(hpCupR);
 
   // ===== Poster frames on walls =====
   const posterFrame = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.5 });
   const posters = [
-    { pos: [-ROOM_SIZE / 2 + 0.03, 1.8, 1.5], ry: Math.PI / 2, color: 0x4060ff },
     { pos: [ROOM_SIZE / 2 - 0.03, 1.6, -1.0], ry: -Math.PI / 2, color: 0xff4060 },
     { pos: [0, 2.2, ROOM_SIZE / 2 - 0.03], ry: Math.PI, color: 0x40ff60 },
   ];
@@ -450,34 +571,47 @@ export function createScene(canvas: HTMLCanvasElement) {
     new THREE.BoxGeometry(4.0, 4.0, 4.0),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }),
   );
-  interactionZone.position.set(0, 1.2, 0.5);
+  interactionZone.position.set(0, 1.2, -3.0);
   interactionZone.name = 'interactionZone';
   scene.add(interactionZone);
 
-  // ===== Lighting — gamer basement, visible but atmospheric =====
+  // ===== Lighting — well-lit gamer basement =====
 
-  // Ambient — warm fill so nothing is pitch black
-  scene.add(new THREE.AmbientLight(0x404050, 0.8));
+  // Strong ambient so nothing is pitch black
+  scene.add(new THREE.AmbientLight(0x606070, 2.0));
 
   // CRT screen glow
-  const screenGlow = new THREE.PointLight(0x88aadd, 3.0, 6, 1.2);
-  screenGlow.position.set(0, 0.5, 0.8);
+  const screenGlow = new THREE.PointLight(0x88aadd, 5.0, 8, 1);
+  screenGlow.position.set(0, 0.9, -2.5);
   scene.add(screenGlow);
 
-  // Overhead — warm basement bulb, brighter
-  const overheadLight = new THREE.PointLight(0xffe8cc, 1.5, 12, 1.5);
-  overheadLight.position.set(0, 2.85, 0);
+  // Overhead — bright warm bulb
+  const overheadLight = new THREE.PointLight(0xffeedd, 5.0, 16, 1);
+  overheadLight.position.set(0, 2.85, -2.0);
   scene.add(overheadLight);
 
+  // Second overhead for the other half of the room
+  const overheadLight2 = new THREE.PointLight(0xffeedd, 3.0, 14, 1);
+  overheadLight2.position.set(0, 2.85, 2.0);
+  scene.add(overheadLight2);
+
   // Fill from behind player
-  const fillLight = new THREE.PointLight(0x8090a0, 0.6, 8, 1.5);
+  const fillLight = new THREE.PointLight(0x9099aa, 2.0, 12, 1);
   fillLight.position.set(0, 2, 3.5);
   scene.add(fillLight);
 
-  // Secondary fill from the side
-  const sideLight = new THREE.PointLight(0x908070, 0.4, 8, 2);
-  sideLight.position.set(3, 1.5, 0);
+  // Fill from the right
+  const sideLight = new THREE.PointLight(0x908070, 1.5, 12, 1);
+  sideLight.position.set(3, 1.5, -1);
   scene.add(sideLight);
+
+  // City glow from open left wall
+  const moonLight = new THREE.DirectionalLight(0x8899bb, 1.5);
+  moonLight.position.set(-5, 3, 0);
+  scene.add(moonLight);
+
+  // Hemisphere light for natural fill
+  scene.add(new THREE.HemisphereLight(0x8899bb, 0x333320, 0.8));
 
   // ===== Resize =====
   function onResize() {

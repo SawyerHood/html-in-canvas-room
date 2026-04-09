@@ -4,17 +4,20 @@ import { activate, deactivate } from '@/utils/dom';
 import { createScene } from '@/utils/crt-scene';
 import { createCRTMaterial } from '@/utils/crt-material';
 import { FPSControls } from '@/utils/fps-controls';
+import { DrunkPostEffect } from '@/utils/drunk-post';
 import type { ToContentMessage, CRTState } from '@/utils/messages';
 
 const TAG = '[CRTWorld]';
 // Monitor sits on desk (top=0.75), screen center at desk+0.3=1.05
 const SCREEN_CENTER_Y = 0.75 + 0.3;  // DESK_TOP + screen local y
-const SCREEN_CENTER_Z = 0.1 + 0.295; // monitorGroup z + screen local z
+const SCREEN_CENTER_Z = -3.2 + 0.295; // monitorGroup z + screen local z
 const SEATED_POS = new THREE.Vector3(0, SCREEN_CENTER_Y, SCREEN_CENTER_Z + 0.45);
 const SEATED_LOOK = new THREE.Vector3(0, SCREEN_CENTER_Y, SCREEN_CENTER_Z);
-const DESK_CENTER = new THREE.Vector3(0, SCREEN_CENTER_Y, 0);
-const SIT_DISTANCE = 3.5;
+const DESK_CENTER = new THREE.Vector3(0, SCREEN_CENTER_Y, -2.5);
+const SIT_DISTANCE = 5.0;
 const HUD_ID = '__crt-hud';
+const DECAY_DURATION = 60; // seconds from 100% to 0%
+const DRINK_AMOUNT = 0.2;  // each chug adds 20%
 
 // Screen mesh dimensions (must match crt-scene.ts)
 const SCREEN_HALF_W = 0.54 / 2;
@@ -44,6 +47,17 @@ export default defineContentScript({
     let seatTargetQuat = new THREE.Quaternion();
     let lookingAtDesk = false;
     let hud: HTMLDivElement | null = null;
+    let frameOverlay: HTMLImageElement | null = null;
+    let lastSnapshotTime = 0;
+    let hasRenderedFirstFrame = false;
+    let drunkIntensity = 0;
+    let drunkPost: DrunkPostEffect | null = null;
+    let beerCanGroup: THREE.Group | null = null;
+    let drinkAnim = -1; // -1 = inactive, 0-1 = animating
+
+    // Beer can resting pose in camera space
+    const BEER_REST_POS = new THREE.Vector3(0.12, -0.10, -0.25);
+    const BEER_REST_ROT = new THREE.Euler(-0.1, 0, 0.1);
 
     // Project the CRT screen corners to viewport coordinates
     function getScreenBounds(camera: THREE.PerspectiveCamera): DOMRect | null {
@@ -102,6 +116,50 @@ export default defineContentScript({
       wrapper.style.pointerEvents = '';
     }
 
+    // The early-loading frame-overlay.content.ts may have already placed an overlay.
+    // Find it, or create one as fallback.
+    function showFrameOverlay() {
+      const existing = document.getElementById('__crt-frame-overlay');
+      if (existing instanceof HTMLImageElement) {
+        frameOverlay = existing;
+        console.log(TAG, 'Found early frame overlay');
+        return;
+      }
+      // Fallback: create our own
+      chrome.storage.local.get('crtLastFrame', (result) => {
+        if (!result.crtLastFrame) return;
+        frameOverlay = document.createElement('img');
+        frameOverlay.id = '__crt-frame-overlay';
+        frameOverlay.src = result.crtLastFrame;
+        frameOverlay.style.cssText =
+          'position:fixed;inset:0;width:100vw;height:100vh;z-index:2147483647;object-fit:cover;pointer-events:none;';
+        document.body.appendChild(frameOverlay);
+        console.log(TAG, 'Frame overlay created (fallback)');
+      });
+    }
+
+    function hideFrameOverlay() {
+      // Hide whichever overlay exists (early or fallback)
+      const el = frameOverlay || document.getElementById('__crt-frame-overlay');
+      if (!el) return;
+      (el as HTMLElement).style.transition = 'opacity 0.3s';
+      (el as HTMLElement).style.opacity = '0';
+      setTimeout(() => {
+        el.remove();
+        frameOverlay = null;
+      }, 300);
+      console.log(TAG, 'Frame overlay hidden');
+    }
+
+    // Save a frame snapshot to storage for next page load
+    function saveFrameSnapshot() {
+      if (!canvas) return;
+      try {
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+        chrome.storage.local.set({ crtLastFrame: dataUrl });
+      } catch { /* ignore */ }
+    }
+
     function createHUD() {
       hud = document.createElement('div');
       hud.id = HUD_ID;
@@ -151,24 +209,92 @@ export default defineContentScript({
     function updateHUD() {
       if (!hud) return;
       const prompt = hud.querySelector('.prompt') as HTMLElement;
+      const beerHint = beerCanGroup
+        ? ' &middot; <kbd>F</kbd> drink &middot; <kbd>Q</kbd> toss'
+        : '';
       if (seated) {
         hud.classList.add('seated');
         prompt.innerHTML =
-          'Click &amp; scroll to browse &middot; <kbd>Escape</kbd> to stand';
+          'Click &amp; scroll to browse &middot; <kbd>Escape</kbd> to stand' + beerHint;
       } else if (!fps?.isLocked) {
         hud.classList.remove('seated');
         prompt.innerHTML = 'Click to look around &middot; <kbd>WASD</kbd> to move';
       } else if (lookingAtDesk) {
         hud.classList.remove('seated');
-        prompt.innerHTML = 'Press <kbd>E</kbd> to sit down';
+        prompt.innerHTML =
+          '<kbd>E</kbd> sit &middot; <kbd>F</kbd> grab a beer' + beerHint;
       } else {
         hud.classList.remove('seated');
-        prompt.innerHTML = '<kbd>WASD</kbd> to move';
+        prompt.innerHTML = '<kbd>WASD</kbd> to move' + beerHint;
       }
     }
 
-    function activateCRT(startSeated = false) {
+    function onResizeDrunk() {
+      drunkPost?.resize(window.innerWidth, window.innerHeight);
+    }
+
+    function createBeerCanMesh(): THREE.Group {
+      const group = new THREE.Group();
+      const bodyMat = new THREE.MeshStandardMaterial({
+        color: 0xc8a84e, metalness: 0.5, roughness: 0.3,
+      });
+      const body = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.02, 0.02, 0.08, 16), bodyMat,
+      );
+      group.add(body);
+      // Green label band
+      const label = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.0205, 0.0205, 0.035, 16),
+        new THREE.MeshStandardMaterial({ color: 0x1a5c2a, roughness: 0.8 }),
+      );
+      label.position.y = -0.005;
+      group.add(label);
+      // Top rim
+      const top = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.017, 0.02, 0.004, 16),
+        new THREE.MeshStandardMaterial({ color: 0xd4b85a, metalness: 0.6, roughness: 0.3 }),
+      );
+      top.position.y = 0.042;
+      group.add(top);
+      // Tab
+      const tab = new THREE.Mesh(
+        new THREE.BoxGeometry(0.006, 0.002, 0.015),
+        new THREE.MeshStandardMaterial({ color: 0xa0a0a0, metalness: 0.4, roughness: 0.4 }),
+      );
+      tab.position.set(0, 0.045, 0.005);
+      group.add(tab);
+
+      group.position.copy(BEER_REST_POS);
+      group.rotation.copy(BEER_REST_ROT);
+      return group;
+    }
+
+    function removeBeerCan3D() {
+      if (beerCanGroup) {
+        beerCanGroup.parent?.remove(beerCanGroup);
+        beerCanGroup = null;
+      }
+      drinkAnim = -1;
+      updateHUD();
+    }
+
+    function onDrink() {
+      if (!beerCanGroup || drinkAnim >= 0) return;
+      drinkAnim = 0; // start drink animation
+    }
+
+    function onToss() {
+      removeBeerCan3D();
+    }
+
+
+
+    function activateCRT(startSeated = false, restoredDrunk = 0) {
       if (isActive) return;
+
+      // Show last frame overlay immediately while scene loads
+      if (startSeated) showFrameOverlay();
+      hasRenderedFirstFrame = false;
 
       const result = activate();
       if (!result) return;
@@ -187,6 +313,14 @@ export default defineContentScript({
       }
 
       console.log(TAG, 'Activated');
+
+      // Drunk post-processing (shader-based)
+      drunkIntensity = restoredDrunk;
+      drunkPost = new DrunkPostEffect(
+        window.innerWidth, window.innerHeight,
+        renderer.toneMappingExposure,
+      );
+      window.addEventListener('resize', onResizeDrunk);
 
       // GL texture
       glTexture = gl.createTexture()!;
@@ -219,6 +353,7 @@ export default defineContentScript({
       canvas.addEventListener('paint', onPaint);
       document.addEventListener('keydown', onKeyDown);
       canvas.addEventListener('wheel', onWheel, { passive: false });
+
 
       if (canvas.requestPaint) canvas.requestPaint();
 
@@ -262,6 +397,13 @@ export default defineContentScript({
         canvas.removeEventListener('wheel', onWheel);
       }
       document.removeEventListener('keydown', onKeyDown);
+
+
+      window.removeEventListener('resize', onResizeDrunk);
+      removeBeerCan3D();
+
+      if (drunkPost) { drunkPost.dispose(); drunkPost = null; }
+      drunkIntensity = 0;
 
       if (fps) { fps.dispose(); fps = null; }
       hud?.remove(); hud = null;
@@ -310,6 +452,20 @@ export default defineContentScript({
           fps?.lock();
           updateHUD();
         }, 100);
+      }
+
+      if (e.key === 'f' || e.key === 'F') {
+        if (beerCanGroup) {
+          onDrink();
+        } else if (!seated && fps.isLocked && lookingAtDesk && sceneData) {
+          beerCanGroup = createBeerCanMesh();
+          sceneData.camera.add(beerCanGroup);
+          updateHUD();
+        }
+      }
+
+      if (e.key === 'q' || e.key === 'Q') {
+        onToss();
       }
 
       if (e.key === 'e' || e.key === 'E') {
@@ -410,24 +566,90 @@ export default defineContentScript({
         if (lookingAtDesk !== wasLooking) updateHUD();
       }
 
+      // Decay drunk intensity
+      if (drunkIntensity > 0) {
+        drunkIntensity = Math.max(0, drunkIntensity - dt / DECAY_DURATION);
+        if (Math.random() < 0.02) persistState();
+      }
+
+      // Animate held beer can
+      if (beerCanGroup) {
+        if (drinkAnim >= 0) {
+          drinkAnim += dt * 2; // ~0.5s animation
+          if (drinkAnim >= 1) {
+            // Drinking complete — add drunkenness, keep can
+            drunkIntensity = Math.min(1.0, drunkIntensity + DRINK_AMOUNT);
+            drinkAnim = -1;
+            persistState();
+          } else {
+            // Smoothstep for nice easing
+            const t = drinkAnim * drinkAnim * (3 - 2 * drinkAnim);
+            // Tilt can up toward camera (like chugging)
+            beerCanGroup.position.set(
+              BEER_REST_POS.x * (1 - t * 0.5),
+              BEER_REST_POS.y + t * 0.12,
+              BEER_REST_POS.z + t * 0.12,
+            );
+            beerCanGroup.rotation.set(
+              BEER_REST_ROT.x - t * 1.5, // tilt back
+              BEER_REST_ROT.y,
+              BEER_REST_ROT.z * (1 - t),
+            );
+          }
+        } else {
+          // Idle wobble when drunk
+          const w = drunkIntensity * 0.05;
+          beerCanGroup.position.copy(BEER_REST_POS);
+          beerCanGroup.rotation.set(
+            BEER_REST_ROT.x + Math.cos(time * 2) * w * 0.5,
+            BEER_REST_ROT.y,
+            BEER_REST_ROT.z + Math.sin(time * 3) * w,
+          );
+        }
+      }
+
       // Shader time
       crtMaterial.uniforms.u_time.value = time;
 
-      // Render
-      renderer.render(sceneData.scene, sceneData.camera);
+      // Update drunk post-processing
+      if (drunkPost) {
+        drunkPost.setIntensity(drunkIntensity);
+        drunkPost.setTime(time);
+      }
+
+      // Render (with drunk post-processing if active)
+      if (drunkPost && drunkIntensity > 0.001) {
+        drunkPost.render(renderer, sceneData.scene, sceneData.camera);
+      } else {
+        renderer.render(sceneData.scene, sceneData.camera);
+      }
+
+      // After first successful render, hide the loading overlay
+      if (!hasRenderedFirstFrame && timestamp - startTime > 500) {
+        hasRenderedFirstFrame = true;
+        hideFrameOverlay();
+      }
+
+      // Save frame snapshot every 2 seconds for seamless page transitions
+      if (timestamp - lastSnapshotTime > 2000) {
+        lastSnapshotTime = timestamp;
+        saveFrameSnapshot();
+      }
 
       rafId = requestAnimationFrame(renderLoop);
     }
 
     function persistState() {
-      chrome.storage.local.set({ crtState: { active: isActive, seated } as CRTState });
+      chrome.storage.local.set({
+        crtState: { active: isActive, seated, drunkIntensity } as CRTState,
+      });
     }
 
     chrome.storage.local.get('crtState', (result) => {
       const state = result.crtState as CRTState | undefined;
       if (state?.active) {
-        console.log(TAG, 'Restoring state, seated:', state.seated);
-        activateCRT(state.seated ?? false);
+        console.log(TAG, 'Restoring state, seated:', state.seated, 'drunk:', state.drunkIntensity);
+        activateCRT(state.seated ?? false, state.drunkIntensity ?? 0);
       }
     });
 

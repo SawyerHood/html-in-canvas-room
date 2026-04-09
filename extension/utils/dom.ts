@@ -37,6 +37,7 @@ export function activate(): {
   const children = Array.from(document.body.childNodes);
   for (const child of children) {
     if (child instanceof HTMLScriptElement) continue;
+    if (child instanceof HTMLElement && child.id === '__crt-frame-overlay') continue;
     wrapper.appendChild(child);
   }
 
