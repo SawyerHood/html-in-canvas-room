@@ -6,7 +6,7 @@ export const DESK_TOP = 0.75;
 // Monitor positioning
 export const MONITOR_GROUP_Z = -3.2;
 export const SCREEN_LOCAL_Y = 0.3;
-export const SCREEN_LOCAL_Z = 0.296;
+export const SCREEN_LOCAL_Z = 0.258;
 
 // Screen mesh dimensions (matches bezel inner area)
 export const SCR_W = 0.62;

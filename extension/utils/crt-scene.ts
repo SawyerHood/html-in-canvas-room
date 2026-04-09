@@ -1,7 +1,16 @@
 import * as THREE from 'three';
 import { CITY_BACKDROP_URL } from './skybox-data';
 import { NEON_DRIFT_URL, LAST_SIGNAL_URL } from './poster-data';
-import { ROOM_SIZE, ROOM_HEIGHT, DESK_TOP, SCR_W, SCR_H } from './scene/constants';
+import {
+  ROOM_SIZE,
+  ROOM_HEIGHT,
+  DESK_TOP,
+  MONITOR_GROUP_Z,
+  SCREEN_LOCAL_Y,
+  SCREEN_LOCAL_Z,
+  SCR_W,
+  SCR_H,
+} from './scene/constants';
 
 export function createScene(canvas: HTMLCanvasElement) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
@@ -398,9 +407,64 @@ export function createScene(canvas: HTMLCanvasElement) {
 
   // ===== CRT Monitor — scaled to match chair proportions =====
   const monitorGroup = new THREE.Group();
+  const monitorBodyMat = new THREE.MeshStandardMaterial({ color: 0xc8c0a8, roughness: 0.85 });
+  const innerBezelMat = new THREE.MeshBasicMaterial({
+    color: 0x000000,
+    side: THREE.DoubleSide,
+    fog: false,
+  });
+  const cavityWallMat = new THREE.MeshBasicMaterial({
+    vertexColors: true,
+    side: THREE.DoubleSide,
+    fog: false,
+  });
 
-  // Body — ~0.7 wide, proportional to chair
-  const bodyGeom = new THREE.BoxGeometry(0.7, 0.55, 0.55);
+  const monitorOuterW = 0.7;
+  const monitorOuterH = 0.55;
+  const monitorOuterD = 0.55;
+  const monitorFrontZ = monitorOuterD / 2;
+  const shellFrontZ = 0.12;
+  const frameBackZ = 0.105;
+  const cavityFrontW = 0.66;
+  const cavityFrontH = 0.51;
+  const frameSideW = (monitorOuterW - cavityFrontW) / 2;
+  const frameTopH = (monitorOuterH - cavityFrontH) / 2;
+  const frameDepth = monitorFrontZ - frameBackZ;
+  const frameCenterZ = monitorFrontZ - frameDepth / 2;
+  const innerBezelDepth = 0.016;
+  const innerBezelOuterW = 0.648;
+  const innerBezelOuterH = 0.486;
+  const innerBezelSideW = (innerBezelOuterW - SCR_W) / 2;
+  const innerBezelTopH = (innerBezelOuterH - SCR_H) / 2;
+  const innerBezelCenterZ = monitorFrontZ - innerBezelDepth / 2 - 0.004;
+
+  const cavityFrontHalfW = cavityFrontW / 2;
+  const cavityFrontHalfH = cavityFrontH / 2;
+  const screenHalfW = SCR_W / 2;
+  const screenHalfH = SCR_H / 2;
+  const cavityFrontColor = new THREE.Color(0x010101);
+  const cavityBackColor = new THREE.Color(0x0a0a0a);
+
+  function createCavityWall(points: [number, number, number][]) {
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.Float32BufferAttribute(points.flat(), 3));
+    geom.setAttribute('color', new THREE.Float32BufferAttribute([
+      cavityFrontColor.r, cavityFrontColor.g, cavityFrontColor.b,
+      cavityFrontColor.r, cavityFrontColor.g, cavityFrontColor.b,
+      cavityBackColor.r, cavityBackColor.g, cavityBackColor.b,
+      cavityBackColor.r, cavityBackColor.g, cavityBackColor.b,
+    ], 3));
+    geom.setIndex([0, 1, 2, 0, 2, 3]);
+    geom.computeVertexNormals();
+    return new THREE.Mesh(geom, cavityWallMat);
+  }
+
+  // Main shell sits behind the opening so the cavity stays clear.
+  const bodyGeom = new THREE.BoxGeometry(
+    monitorOuterW,
+    monitorOuterH,
+    shellFrontZ + monitorOuterD / 2,
+  );
   const bodyPos = bodyGeom.attributes.position;
   for (let i = 0; i < bodyPos.count; i++) {
     if (bodyPos.getZ(i) < 0) {
@@ -408,37 +472,99 @@ export function createScene(canvas: HTMLCanvasElement) {
       bodyPos.setY(i, bodyPos.getY(i) * 0.85);
     }
   }
+  bodyPos.needsUpdate = true;
   bodyGeom.computeVertexNormals();
-  const bodyMesh = new THREE.Mesh(
-    bodyGeom,
-    new THREE.MeshStandardMaterial({ color: 0xc8c0a8, roughness: 0.85 }),
-  );
-  bodyMesh.position.set(0, 0.3, 0);
+  const bodyMesh = new THREE.Mesh(bodyGeom, monitorBodyMat);
+  bodyMesh.position.set(0, SCREEN_LOCAL_Y, (shellFrontZ - monitorOuterD / 2) / 2);
   monitorGroup.add(bodyMesh);
 
-  // Bezel
-  const bezelMesh = new THREE.Mesh(
-    new THREE.BoxGeometry(0.62, 0.47, 0.03),
-    new THREE.MeshStandardMaterial({ color: 0x0a0a0a, roughness: 0.9 }),
+  // Front body-colored bezel frame. The center is intentionally open.
+  const frameLeft = new THREE.Mesh(
+    new THREE.BoxGeometry(frameSideW, monitorOuterH, frameDepth),
+    monitorBodyMat,
   );
-  bezelMesh.position.set(0, 0.3, 0.28);
-  monitorGroup.add(bezelMesh);
+  frameLeft.position.set(-(cavityFrontHalfW + frameSideW / 2), SCREEN_LOCAL_Y, frameCenterZ);
+  monitorGroup.add(frameLeft);
 
-  // Screen — curved plane
-  // SCR_W, SCR_H imported from scene/constants
+  const frameRight = frameLeft.clone();
+  frameRight.position.x *= -1;
+  monitorGroup.add(frameRight);
+
+  const frameTop = new THREE.Mesh(
+    new THREE.BoxGeometry(cavityFrontW, frameTopH, frameDepth),
+    monitorBodyMat,
+  );
+  frameTop.position.set(0, SCREEN_LOCAL_Y + cavityFrontHalfH + frameTopH / 2, frameCenterZ);
+  monitorGroup.add(frameTop);
+
+  const frameBottom = frameTop.clone();
+  frameBottom.position.y = SCREEN_LOCAL_Y - cavityFrontHalfH - frameTopH / 2;
+  monitorGroup.add(frameBottom);
+
+  // Thin black rim at the opening so the inner bezel reads black before the cavity walls.
+  const innerBezelLeft = new THREE.Mesh(
+    new THREE.BoxGeometry(innerBezelSideW, innerBezelOuterH, innerBezelDepth),
+    innerBezelMat,
+  );
+  innerBezelLeft.position.set(
+    -(SCR_W / 2 + innerBezelSideW / 2),
+    SCREEN_LOCAL_Y,
+    innerBezelCenterZ,
+  );
+  monitorGroup.add(innerBezelLeft);
+
+  const innerBezelRight = innerBezelLeft.clone();
+  innerBezelRight.position.x *= -1;
+  monitorGroup.add(innerBezelRight);
+
+  const innerBezelTop = new THREE.Mesh(
+    new THREE.BoxGeometry(innerBezelOuterW, innerBezelTopH, innerBezelDepth),
+    innerBezelMat,
+  );
+  innerBezelTop.position.set(
+    0,
+    SCREEN_LOCAL_Y + SCR_H / 2 + innerBezelTopH / 2,
+    innerBezelCenterZ,
+  );
+  monitorGroup.add(innerBezelTop);
+
+  const innerBezelBottom = innerBezelTop.clone();
+  innerBezelBottom.position.y = SCREEN_LOCAL_Y - SCR_H / 2 - innerBezelTopH / 2;
+  monitorGroup.add(innerBezelBottom);
+
+  // Black inner lip/tunnel between the outer opening and the recessed screen.
+  monitorGroup.add(createCavityWall([
+    [-cavityFrontHalfW, SCREEN_LOCAL_Y + cavityFrontHalfH, monitorFrontZ],
+    [cavityFrontHalfW, SCREEN_LOCAL_Y + cavityFrontHalfH, monitorFrontZ],
+    [screenHalfW, SCREEN_LOCAL_Y + screenHalfH, SCREEN_LOCAL_Z],
+    [-screenHalfW, SCREEN_LOCAL_Y + screenHalfH, SCREEN_LOCAL_Z],
+  ]));
+  monitorGroup.add(createCavityWall([
+    [cavityFrontHalfW, SCREEN_LOCAL_Y - cavityFrontHalfH, monitorFrontZ],
+    [-cavityFrontHalfW, SCREEN_LOCAL_Y - cavityFrontHalfH, monitorFrontZ],
+    [-screenHalfW, SCREEN_LOCAL_Y - screenHalfH, SCREEN_LOCAL_Z],
+    [screenHalfW, SCREEN_LOCAL_Y - screenHalfH, SCREEN_LOCAL_Z],
+  ]));
+  monitorGroup.add(createCavityWall([
+    [-cavityFrontHalfW, SCREEN_LOCAL_Y - cavityFrontHalfH, monitorFrontZ],
+    [-cavityFrontHalfW, SCREEN_LOCAL_Y + cavityFrontHalfH, monitorFrontZ],
+    [-screenHalfW, SCREEN_LOCAL_Y + screenHalfH, SCREEN_LOCAL_Z],
+    [-screenHalfW, SCREEN_LOCAL_Y - screenHalfH, SCREEN_LOCAL_Z],
+  ]));
+  monitorGroup.add(createCavityWall([
+    [cavityFrontHalfW, SCREEN_LOCAL_Y + cavityFrontHalfH, monitorFrontZ],
+    [cavityFrontHalfW, SCREEN_LOCAL_Y - cavityFrontHalfH, monitorFrontZ],
+    [screenHalfW, SCREEN_LOCAL_Y - screenHalfH, SCREEN_LOCAL_Z],
+    [screenHalfW, SCREEN_LOCAL_Y + screenHalfH, SCREEN_LOCAL_Z],
+  ]));
+
+  // Screen sits on the back wall of the cavity.
   const screenGeom = new THREE.PlaneGeometry(SCR_W, SCR_H, 40, 40);
-  const screenPos = screenGeom.attributes.position;
-  for (let i = 0; i < screenPos.count; i++) {
-    const nx = screenPos.getX(i) / (SCR_W / 2);
-    const ny = screenPos.getY(i) / (SCR_H / 2);
-    screenPos.setZ(i, 0);
-  }
-  screenGeom.computeVertexNormals();
   const screenMesh = new THREE.Mesh(
     screenGeom,
     new THREE.MeshBasicMaterial({ color: 0x111122 }),
   );
-  screenMesh.position.set(0, 0.3, 0.296);
+  screenMesh.position.set(0, SCREEN_LOCAL_Y, SCREEN_LOCAL_Z);
   monitorGroup.add(screenMesh);
 
   // Stand
@@ -452,7 +578,7 @@ export function createScene(canvas: HTMLCanvasElement) {
 
   // Position group so stand sits on desk surface
   // DESK_TOP imported from scene/constants
-  monitorGroup.position.set(0, DESK_TOP, -3.2);
+  monitorGroup.position.set(0, DESK_TOP, MONITOR_GROUP_Z);
   scene.add(monitorGroup);
 
   // ===== Gaming Desk — black =====
@@ -499,7 +625,7 @@ export function createScene(canvas: HTMLCanvasElement) {
   scene.add(ledGlow2);
 
   // ===== Peripherals — dark to match gaming desk =====
-  const peripheralMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.7 });
+  const peripheralMat = new THREE.MeshStandardMaterial({ color: 0xc8c0a8, roughness: 0.8 });
   const kbMesh = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.02, 0.18), peripheralMat);
   kbMesh.position.set(0, DESK_TOP + 0.04, -2.7);
   scene.add(kbMesh);
@@ -1120,6 +1246,7 @@ export function createScene(canvas: HTMLCanvasElement) {
   }
 
   addInteractable('sit', [0, 1.0, -2.5], [2.0, 1.5, 2.0]);           // desk/chair area
+  addInteractable('sit', [0, 1.08, MONITOR_GROUP_Z + 0.18], [1.2, 0.9, 0.9]); // monitor/screen area
   addInteractable('beer', [-0.65, DESK_TOP + 0.1, -2.9], [0.5, 0.3, 0.4]); // left beer cans
   addInteractable('beer', [0.8, DESK_TOP + 0.1, -3.0], [0.5, 0.4, 0.5]);  // right beer can
   addInteractable('record', [0, 0.4, ROOM_SIZE / 2 - 0.3], [1.5, 1.0, 0.8]); // record cabinet

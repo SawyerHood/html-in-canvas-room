@@ -9,7 +9,7 @@ import { SCREEN_CENTER_Y, SCREEN_CENTER_Z, SCREEN_HALF_W, SCREEN_HALF_H } from '
 import type { ToContentMessage, CRTState } from '@/utils/messages';
 
 const TAG = '[CRTWorld]';
-const SEATED_POS = new THREE.Vector3(0, SCREEN_CENTER_Y, SCREEN_CENTER_Z + 0.45);
+const SEATED_POS = new THREE.Vector3(0, SCREEN_CENTER_Y, SCREEN_CENTER_Z + 0.52);
 const SEATED_LOOK = new THREE.Vector3(0, SCREEN_CENTER_Y, SCREEN_CENTER_Z);
 const HUD_ID = '__crt-hud';
 const DECAY_DURATION = 60; // seconds from 100% to 0%
