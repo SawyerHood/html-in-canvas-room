@@ -1,4 +1,6 @@
 node_modules/
 .output/
 .wxt/
+.DS_Store
+*.log
 web-ext.config.ts
