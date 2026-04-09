@@ -432,8 +432,8 @@ export function createScene(canvas: HTMLCanvasElement) {
   const frameDepth = monitorFrontZ - frameBackZ;
   const frameCenterZ = monitorFrontZ - frameDepth / 2;
   const innerBezelDepth = 0.016;
-  const innerBezelOuterW = 0.648;
-  const innerBezelOuterH = 0.486;
+  const innerBezelOuterW = SCR_W + 0.008;
+  const innerBezelOuterH = SCR_H + 0.008;
   const innerBezelSideW = (innerBezelOuterW - SCR_W) / 2;
   const innerBezelTopH = (innerBezelOuterH - SCR_H) / 2;
   const innerBezelCenterZ = monitorFrontZ - innerBezelDepth / 2 - 0.004;

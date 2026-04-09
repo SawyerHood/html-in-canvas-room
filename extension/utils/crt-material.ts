@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 
+export const CRT_OVERSCAN = 1.05;
+
 const vertexShader = `
 varying vec2 vUv;
 
@@ -23,30 +25,38 @@ uniform float u_phosphor;
 uniform float u_flicker;
 uniform float u_reflection;
 
+float roundedRectSDF(vec2 p, vec2 halfSize, float radius) {
+  vec2 q = abs(p) - halfSize + vec2(radius);
+  return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - radius;
+}
+
 void main() {
   vec2 uv = vUv;
 
   // 1. Barrel distortion
   vec2 center = uv - 0.5;
   float r2 = dot(center, center);
-  if (u_barrel > 0.5) uv = uv + center * r2 * 0.12;
+  if (u_barrel > 0.5) uv = uv + center * r2 * 0.055;
 
   // 2. Screen bounds mask
-  float border = 0.02;
-  float edge = 0.005;
-  float mask = smoothstep(0.0, edge, uv.x - border)
-             * smoothstep(0.0, edge, uv.y - border)
-             * smoothstep(0.0, edge, (1.0 - border) - uv.x)
-             * smoothstep(0.0, edge, (1.0 - border) - uv.y);
+  float border = 0.0005;
+  float edge = 0.004;
+  float cornerRadius = 0.014;
+  float mask = 1.0 - smoothstep(
+    0.0,
+    edge,
+    roundedRectSDF(uv - 0.5, vec2(0.5 - border), cornerRadius)
+  );
 
   if (mask < 0.01) {
-    float glowDist = min(min(abs(uv.x - 0.5), abs(uv.y - 0.5)), 0.5);
-    vec3 bezelGlow = vec3(0.02, 0.04, 0.03) * (1.0 - smoothstep(0.0, 0.15, r2));
+    vec3 bezelGlow = vec3(0.01, 0.02, 0.015) * (1.0 - smoothstep(0.08, 0.35, r2));
     gl_FragColor = vec4(bezelGlow, 1.0);
     return;
   }
 
-  vec3 col = pow(texture2D(u_texture, uv).rgb, vec3(2.2)); // sRGB → linear
+  float overscan = ${CRT_OVERSCAN.toFixed(2)};
+  vec2 sampleUv = clamp((uv - 0.5) / overscan + 0.5, 0.0, 1.0);
+  vec3 col = pow(texture2D(u_texture, sampleUv).rgb, vec3(2.2)); // sRGB → linear
 
   // 3. Scanlines (stronger)
   if (u_scanlines > 0.5) {
@@ -65,7 +75,7 @@ void main() {
   }
 
   // 5. Vignette
-  float vig = 1.0 - r2 * 2.2;
+  float vig = 1.0 - r2 * 1.2;
   col *= clamp(vig, 0.0, 1.0);
 
   // 6. Flicker (more noticeable)

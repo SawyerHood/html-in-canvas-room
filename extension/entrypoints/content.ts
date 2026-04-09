@@ -2,7 +2,7 @@ import { defineContentScript } from 'wxt/utils/define-content-script';
 import * as THREE from 'three';
 import { activate, deactivate } from '@/utils/dom';
 import { createScene } from '@/utils/crt-scene';
-import { createCRTMaterial } from '@/utils/crt-material';
+import { CRT_OVERSCAN, createCRTMaterial } from '@/utils/crt-material';
 import { FPSControls } from '@/utils/fps-controls';
 import { DrunkPostEffect } from '@/utils/drunk-post';
 import { SCREEN_CENTER_Y, SCREEN_CENTER_Z, SCREEN_HALF_W, SCREEN_HALF_H } from '@/utils/scene/constants';
@@ -116,12 +116,14 @@ export default defineContentScript({
 
       const vw = window.innerWidth;
       const vh = window.innerHeight;
-      const scaleX = bounds.width / vw;
-      const scaleY = bounds.height / vh;
+      const scaleX = bounds.width * CRT_OVERSCAN / vw;
+      const scaleY = bounds.height * CRT_OVERSCAN / vh;
+      const offsetX = bounds.width * (CRT_OVERSCAN - 1) * 0.5;
+      const offsetY = bounds.height * (CRT_OVERSCAN - 1) * 0.5;
 
       wrapper.style.transformOrigin = '0 0';
       wrapper.style.transform =
-        `translate(${bounds.x}px, ${bounds.y}px) scale(${scaleX}, ${scaleY})`;
+        `translate(${bounds.x - offsetX}px, ${bounds.y - offsetY}px) scale(${scaleX}, ${scaleY})`;
       wrapper.style.pointerEvents = 'auto';
     }
 
