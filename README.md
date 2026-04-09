@@ -41,6 +41,7 @@ This demo requires the HTML-in-Canvas API, which is only available in **Chrome C
 ```bash
 cd extension
 npm install
+cp web-ext.config.example.ts web-ext.config.ts
 npm run dev
 ```
 
