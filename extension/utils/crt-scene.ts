@@ -843,25 +843,26 @@ export function createScene(canvas: HTMLCanvasElement) {
   screenGlow.position.set(0, 0.9, -2.5);
   scene.add(screenGlow);
 
-  // Overhead — bright warm bulb
-  const overheadLight = new THREE.PointLight(0xffeedd, 5.0, 16, 1);
-  overheadLight.position.set(0, 2.85, -2.0);
+  // Overhead ceiling light fixture (center of room)
+  const fixtureMat = new THREE.MeshStandardMaterial({ color: 0x222228, roughness: 0.5, metalness: 0.3 });
+  // Circular base plate flush with ceiling
+  const fixtureBase = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 0.02, 24), fixtureMat);
+  fixtureBase.position.set(0, ROOM_HEIGHT - 0.03, 0);
+  scene.add(fixtureBase);
+  // Frosted glass cylinder (emissive so it glows)
+  const domeMat = new THREE.MeshStandardMaterial({
+    color: 0xeeddcc, emissive: 0xeeddcc, emissiveIntensity: 0.4, roughness: 0.8,
+  });
+  const fixtureDome = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.18, 0.18, 0.06, 24),
+    domeMat,
+  );
+  fixtureDome.position.set(0, ROOM_HEIGHT - 0.05, 0);
+  scene.add(fixtureDome);
+  // Light source inside the fixture
+  const overheadLight = new THREE.PointLight(0xeeddcc, 1.5, 12, 1);
+  overheadLight.position.set(0, ROOM_HEIGHT - 0.1, 0);
   scene.add(overheadLight);
-
-  // Second overhead for the other half of the room
-  const overheadLight2 = new THREE.PointLight(0xffeedd, 3.0, 14, 1);
-  overheadLight2.position.set(0, 2.85, 2.0);
-  scene.add(overheadLight2);
-
-  // Fill from behind player
-  const fillLight = new THREE.PointLight(0x9099aa, 2.0, 12, 1);
-  fillLight.position.set(0, 2, 3.5);
-  scene.add(fillLight);
-
-  // Fill from the right
-  const sideLight = new THREE.PointLight(0x908070, 1.5, 12, 1);
-  sideLight.position.set(3, 1.5, -1);
-  scene.add(sideLight);
 
   // City glow from open left wall
   const moonLight = new THREE.DirectionalLight(0x8899bb, 1.5);
@@ -892,18 +893,33 @@ export function createScene(canvas: HTMLCanvasElement) {
   const dustPoints = new THREE.Points(dustGeom, dustMat);
   scene.add(dustPoints);
 
-  // ===== Rain outside the open left wall =====
-  const RAIN_COUNT = 400;
+  // ===== Rain outside — falls on 3 sides of the overhang =====
+  // Overhang: x from wallX to wallX-3, z from -7 to +7, y ≈ ROOM_HEIGHT
+  const overhangOuterX = -ROOM_SIZE / 2 - 3;
+  const overhangZMin = -(ROOM_SIZE + 6) / 2;
+  const overhangZMax = (ROOM_SIZE + 6) / 2;
+  const RAIN_COUNT = 500;
   const rainGeom = new THREE.BufferGeometry();
   const rainPositions = new Float32Array(RAIN_COUNT * 6); // 2 verts per line
   const rainSpeeds = new Float32Array(RAIN_COUNT);
-  const rainMinX = -ROOM_SIZE / 2 - 3.5, rainMaxX = -ROOM_SIZE / 2 - 18; // past the overhang
-  const rainMinZ = -ROOM_SIZE / 2 - 3, rainMaxZ = ROOM_SIZE / 2 + 3;
   const rainTop = ROOM_HEIGHT + 8, rainBottom = -5;
   for (let i = 0; i < RAIN_COUNT; i++) {
-    const x = rainMinX + Math.random() * (rainMaxX - rainMinX);
+    let x: number, z: number;
+    const side = Math.random();
+    if (side < 0.5) {
+      // Outer edge (left side) — most rain here
+      x = overhangOuterX - Math.random() * 15;
+      z = overhangZMin + Math.random() * (overhangZMax - overhangZMin);
+    } else if (side < 0.75) {
+      // Front Z edge
+      x = -ROOM_SIZE / 2 - Math.random() * 3;
+      z = overhangZMax + Math.random() * 3;
+    } else {
+      // Back Z edge
+      x = -ROOM_SIZE / 2 - Math.random() * 3;
+      z = overhangZMin - Math.random() * 3;
+    }
     const y = rainBottom + Math.random() * (rainTop - rainBottom);
-    const z = rainMinZ + Math.random() * (rainMaxZ - rainMinZ);
     const len = 0.3 + Math.random() * 0.4;
     rainPositions[i * 6] = x;
     rainPositions[i * 6 + 1] = y;
@@ -1000,7 +1016,8 @@ export function createScene(canvas: HTMLCanvasElement) {
     ledGlow2.color.copy(ledColor2);
 
     // --- Overhead light subtle flicker ---
-    overheadLight.intensity = 5.0 + Math.sin(time * 8.3) * 0.15 + Math.sin(time * 13.7) * 0.1;
+    const flicker = 1.5 + Math.sin(time * 8.3) * 0.06 + Math.sin(time * 13.7) * 0.04;
+    overheadLight.intensity = flicker;
 
     // --- Wall clock — real time ---
     const now = new Date();

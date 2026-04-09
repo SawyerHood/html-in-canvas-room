@@ -30,7 +30,7 @@ export function activate(): {
       ? htmlBg
       : 'white';
 
-  wrapper.style.cssText = `width:100vw;height:100vh;overflow:auto;background:${bg};pointer-events:none;`;
+  wrapper.style.cssText = `width:100vw;height:100vh;overflow:auto;background:${bg};pointer-events:none;padding:20px;box-sizing:border-box;`;
 
   canvas.appendChild(wrapper);
 
