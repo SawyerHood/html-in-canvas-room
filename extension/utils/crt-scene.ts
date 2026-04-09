@@ -566,6 +566,206 @@ export function createScene(canvas: HTMLCanvasElement) {
     scene.add(face);
   }
 
+  // ===== Trash can — near desk =====
+  const trashMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.7, side: THREE.DoubleSide });
+  const trashCan = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.15, 0.4, 16, 1, true), trashMat);
+  trashCan.position.set(-1.3, 0.2, -2.0);
+  scene.add(trashCan);
+  // Bottom
+  const trashBottom = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.02, 16), trashMat);
+  trashBottom.position.set(-1.3, 0.01, -2.0);
+  scene.add(trashBottom);
+  // Crumpled paper balls
+  const paperMat = new THREE.MeshStandardMaterial({ color: 0xe8e0d0, roughness: 0.95 });
+  for (const [px, py, pz, ps] of [
+    [-1.3, 0.32, -2.0, 0.05], [-1.25, 0.28, -1.95, 0.04], [-1.35, 0.35, -2.05, 0.045],
+    [-1.15, 0.03, -1.85, 0.04], [-1.4, 0.04, -2.15, 0.035], // missed shots on floor
+  ] as [number, number, number, number][]) {
+    const paper = new THREE.Mesh(new THREE.IcosahedronGeometry(ps, 0), paperMat);
+    paper.position.set(px, py, pz);
+    paper.rotation.set(Math.random() * 3, Math.random() * 3, 0);
+    scene.add(paper);
+  }
+
+  // ===== String lights along ceiling edge (back wall) =====
+  const stringLightCount = 12;
+  const stringY = ROOM_HEIGHT - 0.1;
+  const stringZ = -ROOM_SIZE / 2 + 0.15;
+  // Wire
+  const wireMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.8 });
+  const wire = new THREE.Mesh(
+    new THREE.BoxGeometry(ROOM_SIZE * 0.8, 0.008, 0.008), wireMat,
+  );
+  wire.position.set(0, stringY, stringZ);
+  scene.add(wire);
+  // Bulbs
+  const bulbColors = [0xff4444, 0x44ff44, 0x4488ff, 0xffaa22, 0xff44aa, 0x44ffdd];
+  const stringBulbs: THREE.Mesh[] = [];
+  for (let idx = 0; idx < stringLightCount; idx++) {
+    const bx = -ROOM_SIZE * 0.38 + idx * (ROOM_SIZE * 0.76 / (stringLightCount - 1));
+    const droop = Math.sin((idx / (stringLightCount - 1)) * Math.PI) * 0.08;
+    const bulbColor = bulbColors[idx % bulbColors.length];
+    const bulb = new THREE.Mesh(
+      new THREE.SphereGeometry(0.025, 8, 6),
+      new THREE.MeshStandardMaterial({
+        color: bulbColor, emissive: bulbColor, emissiveIntensity: 1.5,
+        roughness: 0.3, transparent: true, opacity: 0.9,
+      }),
+    );
+    bulb.position.set(bx, stringY - 0.04 - droop, stringZ);
+    scene.add(bulb);
+    stringBulbs.push(bulb);
+  }
+
+  // ===== Wall clock (right wall) =====
+  const clockFace = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.22, 0.22, 0.03, 32),
+    new THREE.MeshStandardMaterial({ color: 0xeeeeee, roughness: 0.5 }),
+  );
+  clockFace.rotation.z = Math.PI / 2;
+  clockFace.position.set(ROOM_SIZE / 2 - 0.02, 2.0, 1.5);
+  scene.add(clockFace);
+  // Clock rim
+  const clockRim = new THREE.Mesh(
+    new THREE.TorusGeometry(0.22, 0.015, 8, 32),
+    new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.4, metalness: 0.5 }),
+  );
+  clockRim.rotation.y = Math.PI / 2;
+  clockRim.position.set(ROOM_SIZE / 2 - 0.02, 2.0, 1.5);
+  scene.add(clockRim);
+  // Hour marks
+  for (let h = 0; h < 12; h++) {
+    const angle = (h / 12) * Math.PI * 2;
+    const mark = new THREE.Mesh(
+      new THREE.BoxGeometry(0.01, 0.03, 0.005),
+      new THREE.MeshStandardMaterial({ color: 0x222222 }),
+    );
+    mark.position.set(
+      ROOM_SIZE / 2 - 0.01,
+      2.0 + Math.cos(angle) * 0.18,
+      1.5 + Math.sin(angle) * 0.18,
+    );
+    mark.rotation.x = -angle;
+    scene.add(mark);
+  }
+  // Hands (will be animated) — pivoted at center of clock face
+  const handMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+  const clockCenter = new THREE.Vector3(ROOM_SIZE / 2 - 0.03, 2.0, 1.5);
+  const hourHand = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.02, 0.12), handMat);
+  hourHand.geometry.translate(0, 0, 0.06);
+  hourHand.position.copy(clockCenter);
+  scene.add(hourHand);
+  const minuteHand = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.015, 0.16), handMat);
+  minuteHand.geometry.translate(0, 0, 0.08);
+  minuteHand.position.copy(clockCenter);
+  scene.add(minuteHand);
+
+  // ===== Stacked game cases near bookshelf =====
+  const caseColors = [0x1a3a6a, 0x2a5a2a, 0x5a1a3a, 0x4a3a1a, 0x1a4a4a, 0x3a1a5a];
+  let caseY = 0;
+  for (let gc = 0; gc < 6; gc++) {
+    const gameCase = new THREE.Mesh(
+      new THREE.BoxGeometry(0.14, 0.02, 0.19),
+      new THREE.MeshStandardMaterial({ color: caseColors[gc], roughness: 0.7 }),
+    );
+    caseY += 0.02;
+    gameCase.position.set(3.0, caseY, -ROOM_SIZE / 2 + 0.3);
+    // Slight random rotation for messy stack
+    gameCase.rotation.y = (Math.random() - 0.5) * 0.15;
+    scene.add(gameCase);
+  }
+
+  // ===== Bean bag chair in far corner =====
+  const beanBag = new THREE.Mesh(
+    new THREE.SphereGeometry(0.45, 12, 8),
+    new THREE.MeshStandardMaterial({ color: 0x3a2050, roughness: 0.95 }),
+  );
+  beanBag.scale.set(1, 0.6, 1);
+  beanBag.position.set(3.2, 0.27, 3.0);
+  scene.add(beanBag);
+
+  // ===== Wall shelf with figurines (right wall, above game cases) =====
+  const wallShelf = new THREE.Mesh(
+    new THREE.BoxGeometry(0.04, 0.03, 0.8),
+    new THREE.MeshStandardMaterial({ color: 0x2a1a0a, roughness: 0.8 }),
+  );
+  wallShelf.position.set(ROOM_SIZE / 2 - 0.02, 1.2, -2.5);
+  wallShelf.rotation.y = 0;
+  scene.add(wallShelf);
+  // Figurines: simple body + head combos
+  const figColors = [0x4488ff, 0xff4444, 0x44dd44, 0xffaa00];
+  for (let fi = 0; fi < 4; fi++) {
+    const fz = -2.8 + fi * 0.2;
+    const figBody = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.02, 0.025, 0.07, 8),
+      new THREE.MeshStandardMaterial({ color: figColors[fi], roughness: 0.6 }),
+    );
+    figBody.position.set(ROOM_SIZE / 2 - 0.02, 1.25, fz);
+    scene.add(figBody);
+    const figHead = new THREE.Mesh(
+      new THREE.SphereGeometry(0.02, 8, 6),
+      new THREE.MeshStandardMaterial({ color: 0xf0d0b0, roughness: 0.7 }),
+    );
+    figHead.position.set(ROOM_SIZE / 2 - 0.02, 1.31, fz);
+    scene.add(figHead);
+  }
+
+  // ===== Sneakers by the front wall =====
+  const shoeMat = new THREE.MeshStandardMaterial({ color: 0xeeeeee, roughness: 0.6 });
+  const soleMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.8 });
+  const accentMat = new THREE.MeshStandardMaterial({ color: 0xcc2222, roughness: 0.6 });
+  const laceMat = new THREE.MeshStandardMaterial({ color: 0xdddddd, roughness: 0.7 });
+  for (const [sx, rot] of [[1.8, -0.1], [1.97, 0.2]] as [number, number][]) {
+    const shoeGroup = new THREE.Group();
+    shoeGroup.position.set(sx, 0, ROOM_SIZE / 2 - 0.2);
+    shoeGroup.rotation.y = rot;
+    // Sole — slightly wider at front
+    const sole = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.02, 0.26), soleMat);
+    sole.position.y = 0.01;
+    shoeGroup.add(sole);
+    // Midsole stripe
+    const midsole = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.012, 0.26), shoeMat);
+    midsole.position.y = 0.026;
+    shoeGroup.add(midsole);
+    // Upper — back half (ankle area, taller)
+    const upperBack = new THREE.Mesh(new THREE.BoxGeometry(0.088, 0.06, 0.12), shoeMat);
+    upperBack.position.set(0, 0.062, -0.06);
+    shoeGroup.add(upperBack);
+    // Upper — front half (toe box, lower)
+    const upperFront = new THREE.Mesh(new THREE.BoxGeometry(0.088, 0.04, 0.12), shoeMat);
+    upperFront.position.set(0, 0.052, 0.06);
+    shoeGroup.add(upperFront);
+    // Toe cap — rounded front
+    const toeCap = new THREE.Mesh(
+      new THREE.SphereGeometry(0.045, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2),
+      shoeMat,
+    );
+    toeCap.rotation.x = -Math.PI / 2;
+    toeCap.position.set(0, 0.04, 0.12);
+    shoeGroup.add(toeCap);
+    // Tongue
+    const tongue = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.035, 0.08), laceMat);
+    tongue.position.set(0, 0.085, 0.0);
+    tongue.rotation.x = 0.2;
+    shoeGroup.add(tongue);
+    // Swoosh / accent stripe on each side
+    for (const side of [-1, 1]) {
+      const swoosh = new THREE.Mesh(new THREE.BoxGeometry(0.005, 0.02, 0.12), accentMat);
+      swoosh.position.set(side * 0.047, 0.05, 0.0);
+      shoeGroup.add(swoosh);
+    }
+    // Lace holes (small dots)
+    for (let li = 0; li < 3; li++) {
+      const lace = new THREE.Mesh(new THREE.SphereGeometry(0.004, 4, 4), laceMat);
+      lace.position.set(0.015, 0.08, -0.02 + li * 0.035);
+      shoeGroup.add(lace);
+      const lace2 = new THREE.Mesh(new THREE.SphereGeometry(0.004, 4, 4), laceMat);
+      lace2.position.set(-0.015, 0.08, -0.02 + li * 0.035);
+      shoeGroup.add(lace2);
+    }
+    scene.add(shoeGroup);
+  }
+
   // ===== Interaction Zone (unchanged) =====
   const interactionZone = new THREE.Mesh(
     new THREE.BoxGeometry(4.0, 4.0, 4.0),
@@ -743,6 +943,23 @@ export function createScene(canvas: HTMLCanvasElement) {
 
     // --- Overhead light subtle flicker ---
     overheadLight.intensity = 5.0 + Math.sin(time * 8.3) * 0.15 + Math.sin(time * 13.7) * 0.1;
+
+    // --- Wall clock — real time ---
+    const now = new Date();
+    const hours = now.getHours() % 12 + now.getMinutes() / 60;
+    const minutes = now.getMinutes() + now.getSeconds() / 60;
+    // Hands extend in +Z, rotate around X to sweep through Y/Z (clock on right wall)
+    // 12 o'clock = pointing up (+Y) = rotation.x = -PI/2
+    const hourAngle = -Math.PI / 2 - (hours / 12) * Math.PI * 2;
+    const minuteAngle = -Math.PI / 2 - (minutes / 60) * Math.PI * 2;
+    hourHand.rotation.set(hourAngle, 0, 0);
+    minuteHand.rotation.set(minuteAngle, 0, 0);
+
+    // --- String lights twinkle ---
+    for (let si = 0; si < stringBulbs.length; si++) {
+      const mat = stringBulbs[si].material as THREE.MeshStandardMaterial;
+      mat.emissiveIntensity = 1.2 + 0.5 * Math.sin(time * 2.0 + si * 1.7);
+    }
   }
 
   // ===== Resize =====
