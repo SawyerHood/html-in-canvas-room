@@ -588,10 +588,10 @@ export default defineContentScript({
             beerCanGroup.position.set(
               BEER_REST_POS.x * (1 - t * 0.5),
               BEER_REST_POS.y + t * 0.12,
-              BEER_REST_POS.z + t * 0.12,
+              BEER_REST_POS.z - t * 0.08,
             );
             beerCanGroup.rotation.set(
-              BEER_REST_ROT.x - t * 1.5, // tilt back
+              BEER_REST_ROT.x + t * 1.5, // tilt toward camera
               BEER_REST_ROT.y,
               BEER_REST_ROT.z * (1 - t),
             );
