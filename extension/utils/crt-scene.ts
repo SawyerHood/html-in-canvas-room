@@ -1051,7 +1051,7 @@ export function createScene(canvas: HTMLCanvasElement) {
   }
 
   // ===== Sneakers by the front wall =====
-  const shoeMat = new THREE.MeshStandardMaterial({ color: 0xeeeeee, roughness: 0.6 });
+  const shoeMat = new THREE.MeshStandardMaterial({ color: 0xd8d0c4, roughness: 0.7 });
   const soleMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.8 });
   const accentMat = new THREE.MeshStandardMaterial({ color: 0xcc2222, roughness: 0.6 });
   const laceMat = new THREE.MeshStandardMaterial({ color: 0xdddddd, roughness: 0.7 });
@@ -1306,9 +1306,10 @@ export function createScene(canvas: HTMLCanvasElement) {
     const hours = now.getHours() % 12 + now.getMinutes() / 60;
     const minutes = now.getMinutes() + now.getSeconds() / 60;
     // Hands extend in +Z, rotate around X to sweep through Y/Z (clock on right wall)
-    // 12 o'clock = pointing up (+Y) = rotation.x = -PI/2
-    const hourAngle = -Math.PI / 2 - (hours / 12) * Math.PI * 2;
-    const minuteAngle = -Math.PI / 2 - (minutes / 60) * Math.PI * 2;
+    // Viewed from inside the room (looking at +X), clockwise = positive X rotation
+    // 12 o'clock = pointing up = rotation.x = -PI/2
+    const hourAngle = -Math.PI / 2 + (hours / 12) * Math.PI * 2;
+    const minuteAngle = -Math.PI / 2 + (minutes / 60) * Math.PI * 2;
     hourHand.rotation.set(hourAngle, 0, 0);
     minuteHand.rotation.set(minuteAngle, 0, 0);
 

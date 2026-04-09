@@ -55,6 +55,19 @@ export default defineContentScript({
     let selectedRecord = 0;
     let playingRecord = -1;
 
+    // Blackout sequence state
+    type BlackoutPhase = 'none' | 'falling' | 'black' | 'waking';
+    let blackoutPhase: BlackoutPhase = 'none';
+    let blackoutTimer = 0;
+    let blackoutOverlay: HTMLDivElement | null = null;
+    let blackoutStartPos = new THREE.Vector3();
+    let blackoutStartQuat = new THREE.Quaternion();
+    // Head-on-desk pose: slumped sideways on the desk looking at the CRT
+    const BLACKOUT_POS = new THREE.Vector3(0.15, SCREEN_CENTER_Y - 0.1, SCREEN_CENTER_Z + 0.6);
+    const BLACKOUT_QUAT = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(0.1, 0, Math.PI / 2.5), // tilted sideways
+    );
+
     // Beer can resting pose in camera space
     const BEER_REST_POS = new THREE.Vector3(0.12, -0.10, -0.25);
     const BEER_REST_ROT = new THREE.Euler(-0.1, 0, 0.1);
@@ -237,6 +250,38 @@ export default defineContentScript({
 
     function onResizeDrunk() {
       drunkPost?.resize(window.innerWidth, window.innerHeight);
+    }
+
+    function createBlackoutOverlay() {
+      if (blackoutOverlay) return;
+      blackoutOverlay = document.createElement('div');
+      blackoutOverlay.style.cssText =
+        'position:fixed;inset:0;background:black;z-index:2147483647;opacity:0;transition:opacity 0.8s;pointer-events:none;';
+      document.body.appendChild(blackoutOverlay);
+    }
+
+    function setBlackoutOpacity(v: number) {
+      if (blackoutOverlay) blackoutOverlay.style.opacity = String(v);
+    }
+
+    function removeBlackoutOverlay() {
+      blackoutOverlay?.remove();
+      blackoutOverlay = null;
+    }
+
+    function triggerBlackout() {
+      if (!sceneData || blackoutPhase !== 'none') return;
+      blackoutPhase = 'falling';
+      blackoutTimer = 0;
+      blackoutStartPos.copy(sceneData.camera.position);
+      blackoutStartQuat.copy(sceneData.camera.quaternion);
+      createBlackoutOverlay();
+      // Remove beer from hand
+      removeBeerCan3D();
+      // Disable controls and unseat so page isn't visible
+      removeScreenTransform();
+      seated = false;
+      if (fps) fps.enabled = false;
     }
 
     function createBeerCanMesh(): THREE.Group {
@@ -677,8 +722,107 @@ export default defineContentScript({
         }
       }
 
+      // Blackout sequence
+      if (blackoutPhase !== 'none' && sceneData) {
+        blackoutTimer += dt;
+        if (blackoutPhase === 'falling') {
+          // 1.5s: camera slumps onto desk, screen fades to black
+          const t = Math.min(blackoutTimer / 1.5, 1);
+          const s = t * t; // ease in
+          sceneData.camera.position.lerpVectors(blackoutStartPos, BLACKOUT_POS, s);
+          sceneData.camera.quaternion.slerpQuaternions(blackoutStartQuat, BLACKOUT_QUAT, s);
+          setBlackoutOpacity(t);
+          if (t >= 1) { blackoutPhase = 'black'; blackoutTimer = 0; }
+        } else if (blackoutPhase === 'black') {
+          // 3s: fully black, "passed out"
+          setBlackoutOpacity(1);
+          if (blackoutTimer > 3) { blackoutPhase = 'waking'; blackoutTimer = 0; drunkTarget = 0; drunkIntensity = 0; }
+        } else if (blackoutPhase === 'waking') {
+          // Start on your side at desk level, blink open with eyelid shutters
+          // First 1s: initial blink open from black
+          // Then 4s: slow head lift with blink shutters
+          const totalWake = 5;
+          const t = Math.min(blackoutTimer / totalWake, 1);
+
+          // Camera: start at blackout pose, slowly lift to seated
+          const liftT = Math.max(0, (blackoutTimer - 0.8) / (totalWake - 0.8));
+          const s = liftT * liftT * (3 - 2 * liftT);
+          sceneData.camera.position.lerpVectors(BLACKOUT_POS, SEATED_POS, s);
+          const lookMat = new THREE.Matrix4().lookAt(
+            SEATED_POS, SEATED_LOOK, new THREE.Vector3(0, 1, 0),
+          );
+          const wakeQuat = new THREE.Quaternion().setFromRotationMatrix(lookMat);
+          sceneData.camera.quaternion.slerpQuaternions(BLACKOUT_QUAT, wakeQuat, s);
+
+          // Eyelid blink effect: two black bars (top and bottom) that open and close
+          if (blackoutOverlay) {
+            // Switch to eyelid mode on first frame
+            if (blackoutOverlay.childElementCount === 0) {
+              blackoutOverlay.style.background = 'none';
+              blackoutOverlay.style.opacity = '1';
+              const topLid = document.createElement('div');
+              topLid.className = '__crt-lid-top';
+              topLid.style.cssText = 'position:absolute;top:0;left:0;right:0;background:black;height:50%;transition:none;';
+              const bottomLid = document.createElement('div');
+              bottomLid.className = '__crt-lid-bottom';
+              bottomLid.style.cssText = 'position:absolute;bottom:0;left:0;right:0;background:black;height:50%;transition:none;';
+              blackoutOverlay.appendChild(topLid);
+              blackoutOverlay.appendChild(bottomLid);
+            }
+            const topLid = blackoutOverlay.querySelector('.__crt-lid-top') as HTMLElement;
+            const bottomLid = blackoutOverlay.querySelector('.__crt-lid-bottom') as HTMLElement;
+
+            // Blink pattern: start closed, flutter open
+            let openAmount = 0; // 0 = fully closed, 1 = fully open
+            if (blackoutTimer < 0.6) {
+              // Closed
+              openAmount = 0;
+            } else if (blackoutTimer < 1.0) {
+              // First peek
+              openAmount = ((blackoutTimer - 0.6) / 0.4) * 0.3;
+            } else if (blackoutTimer < 1.3) {
+              // Close again
+              openAmount = 0.3 * (1 - (blackoutTimer - 1.0) / 0.3);
+            } else if (blackoutTimer < 1.8) {
+              // Open wider
+              openAmount = ((blackoutTimer - 1.3) / 0.5) * 0.5;
+            } else if (blackoutTimer < 2.1) {
+              // Close briefly
+              openAmount = 0.5 * (1 - (blackoutTimer - 1.8) / 0.3);
+            } else if (blackoutTimer < 3.0) {
+              // Open mostly
+              openAmount = ((blackoutTimer - 2.1) / 0.9) * 0.85;
+            } else if (blackoutTimer < 3.3) {
+              // Quick blink
+              const bt = (blackoutTimer - 3.0) / 0.3;
+              openAmount = 0.85 * (bt < 0.5 ? 1 - bt * 2 : (bt - 0.5) * 2);
+            } else {
+              // Fully open
+              openAmount = Math.min(1, 0.85 + (blackoutTimer - 3.3) / 1.0 * 0.15);
+            }
+
+            const lidH = 50 * (1 - openAmount);
+            topLid.style.height = `${lidH}%`;
+            bottomLid.style.height = `${lidH}%`;
+          }
+
+          if (blackoutTimer > totalWake) {
+            blackoutPhase = 'none';
+            removeBlackoutOverlay();
+            seated = true;
+            seatTransition = 1;
+            seatTargetQuat.copy(wakeQuat);
+            sceneData.camera.position.copy(SEATED_POS);
+            sceneData.camera.quaternion.copy(wakeQuat);
+            if (fps) fps.enabled = false;
+            requestAnimationFrame(() => applyScreenTransform());
+            updateHUD();
+          }
+        }
+      }
+
       // Decay drunk target and smoothly lerp intensity toward it
-      if (drunkTarget > 0) {
+      if (blackoutPhase === 'none' && drunkTarget > 0) {
         drunkTarget = Math.max(0, drunkTarget - dt / DECAY_DURATION);
       }
       drunkIntensity += (drunkTarget - drunkIntensity) * Math.min(dt * 3, 1);
@@ -691,6 +835,7 @@ export default defineContentScript({
           if (drinkAnim >= 1) {
             // Drinking complete — add drunkenness, keep can
             drunkTarget = Math.min(1.0, drunkTarget + DRINK_AMOUNT);
+            if (drunkTarget >= 1.0) triggerBlackout();
             drinkAnim = -1;
             persistState();
           } else {
