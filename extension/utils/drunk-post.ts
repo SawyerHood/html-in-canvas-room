@@ -101,6 +101,29 @@ void main() {
   col *= clamp(vig, 0.0, 1.0);
   col *= 1.0 - fx * 0.38;
 
+  // 7. Linear -> sRGB before dither (so dithering happens in perceptual space)
+  col = pow(col, vec3(1.0 / 2.2));
+
+  // 8. PS1-style ordered dither + color quantization (always on)
+  float brightness = dot(col, vec3(0.299, 0.587, 0.114));
+  float levels = mix(8.0, 48.0, brightness); // chunky in dark areas, smooth on bright screens
+  vec2 pixel = floor(gl_FragCoord.xy);
+  int px = int(mod(pixel.x, 4.0));
+  int py = int(mod(pixel.y, 4.0));
+  int idx = px + py * 4;
+  // 4x4 Bayer matrix
+  float bayer;
+  if (idx ==  0) bayer =  0.0; else if (idx ==  1) bayer =  8.0;
+  else if (idx ==  2) bayer =  2.0; else if (idx ==  3) bayer = 10.0;
+  else if (idx ==  4) bayer = 12.0; else if (idx ==  5) bayer =  4.0;
+  else if (idx ==  6) bayer = 14.0; else if (idx ==  7) bayer =  6.0;
+  else if (idx ==  8) bayer =  3.0; else if (idx ==  9) bayer = 11.0;
+  else if (idx == 10) bayer =  1.0; else if (idx == 11) bayer =  9.0;
+  else if (idx == 12) bayer = 15.0; else if (idx == 13) bayer =  7.0;
+  else if (idx == 14) bayer = 13.0; else bayer = 5.0;
+  float dither = (bayer / 16.0 - 0.5) / levels;
+  col = floor((col + dither) * levels) / levels;
+
   gl_FragColor = vec4(col, 1.0);
 }
 `;
@@ -149,28 +172,26 @@ export class DrunkPostEffect {
     scene: THREE.Scene,
     camera: THREE.Camera,
   ) {
-    const i = this.material.uniforms.u_intensity.value;
+    // Always render through the pipeline (dither is always on, drunk effects gated by intensity)
 
-    if (i < 0.001) {
-      renderer.render(scene, camera);
-      return;
-    }
-
-    // Render scene to half-float RT WITHOUT tone mapping — raw linear HDR
+    // Save renderer state — we take full control of tone mapping + color space
     const savedToneMapping = renderer.toneMapping;
     const savedOutputColorSpace = renderer.outputColorSpace;
     renderer.toneMapping = THREE.NoToneMapping;
     renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+
+    // Render scene to half-float RT — raw linear HDR (no tone mapping, no gamma)
     renderer.setRenderTarget(this.rt);
     renderer.render(scene, camera);
     renderer.setRenderTarget(null);
-    renderer.toneMapping = savedToneMapping;
-    renderer.outputColorSpace = savedOutputColorSpace;
 
-    // Quad applies drunk effects + ACES tone mapping in the shader.
-    // The renderer handles final output color conversion to avoid double-encoding.
+    // Quad applies ACES + sRGB gamma + dither in the shader
     this.material.uniforms.u_texture.value = this.rt.texture;
     renderer.render(this.quadScene, this.quadCamera);
+
+    // Restore renderer state
+    renderer.toneMapping = savedToneMapping;
+    renderer.outputColorSpace = savedOutputColorSpace;
   }
 
   setIntensity(v: number) {

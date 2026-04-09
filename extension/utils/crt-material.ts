@@ -40,7 +40,7 @@ void main() {
     return;
   }
 
-  vec3 col = texture2D(u_texture, uv).rgb;
+  vec3 col = pow(texture2D(u_texture, uv).rgb, vec3(2.2)); // sRGB → linear
 
   // 3. Scanlines
   float scanline = 0.88 + 0.12 * sin(uv.y * u_resolution.y * 3.14159);

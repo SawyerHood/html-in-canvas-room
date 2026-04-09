@@ -617,8 +617,8 @@ export default defineContentScript({
         drunkPost.setTime(time);
       }
 
-      // Render (with drunk post-processing if active)
-      if (drunkPost && drunkIntensity > 0.001) {
+      // Render through post-processing (dither always on, drunk effects gated by intensity)
+      if (drunkPost) {
         drunkPost.render(renderer, sceneData.scene, sceneData.camera);
       } else {
         renderer.render(sceneData.scene, sceneData.camera);
