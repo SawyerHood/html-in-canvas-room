@@ -48,28 +48,28 @@ void main() {
 
   vec3 col = pow(texture2D(u_texture, uv).rgb, vec3(2.2)); // sRGB → linear
 
-  // 3. Scanlines
+  // 3. Scanlines (stronger)
   if (u_scanlines > 0.5) {
-    float scanline = 0.88 + 0.12 * sin(uv.y * u_resolution.y * 3.14159);
+    float scanline = 0.72 + 0.28 * sin(uv.y * u_resolution.y * 3.14159);
     col *= scanline;
   }
 
-  // 4. Phosphor RGB subpixels
+  // 4. Phosphor RGB subpixels (more visible)
   if (u_phosphor > 0.5) {
     float pixelX = fract(uv.x * u_resolution.x / 3.0) * 3.0;
     vec3 phosphor;
-    if (pixelX < 1.0) phosphor = vec3(1.2, 0.9, 0.9);
-    else if (pixelX < 2.0) phosphor = vec3(0.9, 1.2, 0.9);
-    else phosphor = vec3(0.9, 0.9, 1.2);
-    col *= mix(vec3(1.0), phosphor, 0.15);
+    if (pixelX < 1.0) phosphor = vec3(1.4, 0.7, 0.7);
+    else if (pixelX < 2.0) phosphor = vec3(0.7, 1.4, 0.7);
+    else phosphor = vec3(0.7, 0.7, 1.4);
+    col *= mix(vec3(1.0), phosphor, 0.35);
   }
 
   // 5. Vignette
   float vig = 1.0 - r2 * 2.2;
   col *= clamp(vig, 0.0, 1.0);
 
-  // 6. Flicker
-  if (u_flicker > 0.5) col *= 0.98 + 0.02 * sin(u_time * 7.0);
+  // 6. Flicker (more noticeable)
+  if (u_flicker > 0.5) col *= 0.95 + 0.05 * sin(u_time * 7.0);
 
   // 7. Glass reflection
   if (u_reflection > 0.5) {
