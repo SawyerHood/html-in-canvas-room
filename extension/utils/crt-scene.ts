@@ -419,7 +419,7 @@ export function createScene(canvas: HTMLCanvasElement) {
   // Bezel
   const bezelMesh = new THREE.Mesh(
     new THREE.BoxGeometry(0.62, 0.47, 0.03),
-    new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.9 }),
+    new THREE.MeshStandardMaterial({ color: 0x0a0a0a, roughness: 0.9 }),
   );
   bezelMesh.position.set(0, 0.3, 0.28);
   monitorGroup.add(bezelMesh);
@@ -431,14 +431,14 @@ export function createScene(canvas: HTMLCanvasElement) {
   for (let i = 0; i < screenPos.count; i++) {
     const nx = screenPos.getX(i) / (SCR_W / 2);
     const ny = screenPos.getY(i) / (SCR_H / 2);
-    screenPos.setZ(i, (nx * nx + ny * ny) * 0.015);
+    screenPos.setZ(i, 0);
   }
   screenGeom.computeVertexNormals();
   const screenMesh = new THREE.Mesh(
     screenGeom,
     new THREE.MeshBasicMaterial({ color: 0x111122 }),
   );
-  screenMesh.position.set(0, 0.3, 0.295);
+  screenMesh.position.set(0, 0.3, 0.296);
   monitorGroup.add(screenMesh);
 
   // Stand
