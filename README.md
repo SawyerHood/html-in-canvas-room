@@ -1,6 +1,6 @@
 # HTML-in-Canvas Room
 
-A tech demo for the [HTML-in-Canvas API](https://github.com/nicross/html-in-canvas) — a Chrome extension that renders any webpage on a 3D CRT monitor inside a first-person gamer basement.
+A tech demo for the [HTML-in-Canvas API](https://github.com/WICG/html-in-canvas) — a Chrome extension that renders any webpage on a 3D CRT monitor inside a first-person gamer basement.
 
 The entire page is captured as a live WebGL texture using `layoutsubtree` and `texElementImage2D`, displayed on a curved CRT screen in a Three.js scene. You can walk around the room, sit at the desk, and interact with the page natively (click, scroll, type) through CSS transform-based event forwarding.
 
@@ -18,7 +18,7 @@ The entire page is captured as a live WebGL texture using `layoutsubtree` and `t
 
 ## How it works
 
-The key API is the [HTML-in-Canvas proposal](https://github.com/nicross/html-in-canvas):
+The key API is the [HTML-in-Canvas proposal](https://github.com/WICG/html-in-canvas):
 
 1. A `<canvas>` element with the `layoutsubtree` attribute contains a wrapper `<div>` holding the page's DOM
 2. `texElementImage2D()` captures the wrapper as a WebGL texture each frame
