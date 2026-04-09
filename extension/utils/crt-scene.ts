@@ -431,7 +431,7 @@ export function createScene(canvas: HTMLCanvasElement) {
   for (let i = 0; i < screenPos.count; i++) {
     const nx = screenPos.getX(i) / (SCR_W / 2);
     const ny = screenPos.getY(i) / (SCR_H / 2);
-    screenPos.setZ(i, -(nx * nx + ny * ny) * 0.015);
+    screenPos.setZ(i, (nx * nx + ny * ny) * 0.015);
   }
   screenGeom.computeVertexNormals();
   const screenMesh = new THREE.Mesh(
