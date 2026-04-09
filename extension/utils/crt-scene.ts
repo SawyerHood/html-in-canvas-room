@@ -545,7 +545,7 @@ export function createScene(canvas: HTMLCanvasElement) {
   const posterFrame = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.5 });
   const posters = [
     { pos: [ROOM_SIZE / 2 - 0.03, 1.6, -1.0], ry: -Math.PI / 2, color: 0xff4060 },
-    { pos: [0, 2.2, ROOM_SIZE / 2 - 0.03], ry: Math.PI, color: 0x40ff60 },
+    { pos: [0, 1.6, ROOM_SIZE / 2 - 0.03], ry: Math.PI, color: 0x40ff60 },
   ];
   for (const p of posters) {
     // Frame
@@ -613,6 +613,138 @@ export function createScene(canvas: HTMLCanvasElement) {
   // Hemisphere light for natural fill
   scene.add(new THREE.HemisphereLight(0x8899bb, 0x333320, 0.8));
 
+  // ===== Dust particles — floating motes catching the light =====
+  const DUST_COUNT = 60;
+  const dustGeom = new THREE.BufferGeometry();
+  const dustPositions = new Float32Array(DUST_COUNT * 3);
+  const dustVelocities = new Float32Array(DUST_COUNT * 3);
+  for (let i = 0; i < DUST_COUNT; i++) {
+    dustPositions[i * 3] = (Math.random() - 0.5) * ROOM_SIZE * 0.9;
+    dustPositions[i * 3 + 1] = Math.random() * ROOM_HEIGHT;
+    dustPositions[i * 3 + 2] = (Math.random() - 0.5) * ROOM_SIZE * 0.9;
+    dustVelocities[i * 3] = (Math.random() - 0.5) * 0.03;
+    dustVelocities[i * 3 + 1] = 0.01 + Math.random() * 0.02;
+    dustVelocities[i * 3 + 2] = (Math.random() - 0.5) * 0.03;
+  }
+  dustGeom.setAttribute('position', new THREE.BufferAttribute(dustPositions, 3));
+  const dustMat = new THREE.PointsMaterial({
+    color: 0x887766, size: 0.006, transparent: true, opacity: 0.12,
+    depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+  const dustPoints = new THREE.Points(dustGeom, dustMat);
+  scene.add(dustPoints);
+
+  // ===== Rain outside the open left wall =====
+  const RAIN_COUNT = 400;
+  const rainGeom = new THREE.BufferGeometry();
+  const rainPositions = new Float32Array(RAIN_COUNT * 6); // 2 verts per line
+  const rainSpeeds = new Float32Array(RAIN_COUNT);
+  const rainMinX = -ROOM_SIZE / 2 - 3.5, rainMaxX = -ROOM_SIZE / 2 - 18; // past the overhang
+  const rainMinZ = -ROOM_SIZE / 2 - 3, rainMaxZ = ROOM_SIZE / 2 + 3;
+  const rainTop = ROOM_HEIGHT + 8, rainBottom = -5;
+  for (let i = 0; i < RAIN_COUNT; i++) {
+    const x = rainMinX + Math.random() * (rainMaxX - rainMinX);
+    const y = rainBottom + Math.random() * (rainTop - rainBottom);
+    const z = rainMinZ + Math.random() * (rainMaxZ - rainMinZ);
+    const len = 0.3 + Math.random() * 0.4;
+    rainPositions[i * 6] = x;
+    rainPositions[i * 6 + 1] = y;
+    rainPositions[i * 6 + 2] = z;
+    rainPositions[i * 6 + 3] = x + 0.02;
+    rainPositions[i * 6 + 4] = y - len;
+    rainPositions[i * 6 + 5] = z;
+    rainSpeeds[i] = 8 + Math.random() * 6;
+  }
+  rainGeom.setAttribute('position', new THREE.BufferAttribute(rainPositions, 3));
+  const rainMat = new THREE.LineBasicMaterial({
+    color: 0x8899bb, transparent: true, opacity: 0.25,
+  });
+  const rainLines = new THREE.LineSegments(rainGeom, rainMat);
+  scene.add(rainLines);
+
+  // Lightning light (off by default)
+  const lightningLight = new THREE.DirectionalLight(0xddeeff, 0);
+  lightningLight.position.set(-8, 5, 0);
+  scene.add(lightningLight);
+  let lightningTimer = 5 + Math.random() * 10;
+  let lightningFlash = 0;
+
+  // ===== Animate function — called each frame =====
+  function animate(time: number, dt: number) {
+    // --- Dust drift ---
+    const posAttr = dustGeom.attributes.position as THREE.BufferAttribute;
+    const pos = posAttr.array as Float32Array;
+    for (let i = 0; i < DUST_COUNT; i++) {
+      pos[i * 3] += dustVelocities[i * 3] * dt;
+      pos[i * 3 + 1] += dustVelocities[i * 3 + 1] * dt;
+      pos[i * 3 + 2] += dustVelocities[i * 3 + 2] * dt;
+      // Gentle sway
+      pos[i * 3] += Math.sin(time * 0.5 + i) * 0.002 * dt;
+      // Wrap around room
+      if (pos[i * 3 + 1] > ROOM_HEIGHT) {
+        pos[i * 3 + 1] = 0.1;
+        pos[i * 3] = (Math.random() - 0.5) * ROOM_SIZE * 0.9;
+        pos[i * 3 + 2] = (Math.random() - 0.5) * ROOM_SIZE * 0.9;
+      }
+    }
+    posAttr.needsUpdate = true;
+
+    // --- Rain fall ---
+    const rainPos = (rainGeom.attributes.position as THREE.BufferAttribute).array as Float32Array;
+    for (let i = 0; i < RAIN_COUNT; i++) {
+      const fall = rainSpeeds[i] * dt;
+      rainPos[i * 6 + 1] -= fall;
+      rainPos[i * 6 + 4] -= fall;
+      if (rainPos[i * 6 + 1] < rainBottom) {
+        const reset = rainTop - rainBottom;
+        rainPos[i * 6 + 1] += reset;
+        rainPos[i * 6 + 4] += reset;
+      }
+    }
+    (rainGeom.attributes.position as THREE.BufferAttribute).needsUpdate = true;
+
+    // --- Lightning ---
+    lightningTimer -= dt;
+    if (lightningTimer <= 0) {
+      lightningFlash = 1.0;
+      lightningTimer = 6 + Math.random() * 15;
+    }
+    if (lightningFlash > 0) {
+      lightningFlash -= dt * 4;
+      lightningLight.intensity = Math.max(0, lightningFlash) * 12;
+      rainMat.opacity = 0.25 + Math.max(0, lightningFlash) * 0.4;
+    } else {
+      lightningLight.intensity = 0;
+      rainMat.opacity = 0.25;
+    }
+
+    // --- Lava lamp pulse ---
+    const lavaGlow2 = lavaBody.material as THREE.MeshStandardMaterial;
+    const pulse = 1.0 + 0.5 * Math.sin(time * 1.2);
+    lavaGlow2.emissiveIntensity = pulse;
+    lavaGlow.intensity = 0.5 + 0.4 * Math.sin(time * 1.2);
+    // Shift hue slightly
+    const hue = (time * 0.02) % 1;
+    const lavaColor = new THREE.Color().setHSL(hue * 0.1 + 0.02, 0.9, 0.5);
+    lavaGlow2.emissive.copy(lavaColor);
+    lavaGlow.color.copy(lavaColor);
+
+    // --- LED strip color cycling ---
+    const ledHue1 = (time * 0.03) % 1;
+    const ledHue2 = (time * 0.03 + 0.5) % 1;
+    const ledColor1 = new THREE.Color().setHSL(ledHue1, 1, 0.5);
+    const ledColor2 = new THREE.Color().setHSL(ledHue2, 1, 0.5);
+    (ledStrip.material as THREE.MeshStandardMaterial).color.copy(ledColor1);
+    (ledStrip.material as THREE.MeshStandardMaterial).emissive.copy(ledColor1);
+    ledGlow.color.copy(ledColor1);
+    (ledStrip2.material as THREE.MeshStandardMaterial).color.copy(ledColor2);
+    (ledStrip2.material as THREE.MeshStandardMaterial).emissive.copy(ledColor2);
+    ledGlow2.color.copy(ledColor2);
+
+    // --- Overhead light subtle flicker ---
+    overheadLight.intensity = 5.0 + Math.sin(time * 8.3) * 0.15 + Math.sin(time * 13.7) * 0.1;
+  }
+
   // ===== Resize =====
   function onResize() {
     camera.aspect = window.innerWidth / window.innerHeight;
@@ -621,5 +753,5 @@ export function createScene(canvas: HTMLCanvasElement) {
   }
   window.addEventListener('resize', onResize);
 
-  return { renderer, scene, camera, screenMesh, interactionZone, onResize };
+  return { renderer, scene, camera, screenMesh, interactionZone, onResize, animate };
 }

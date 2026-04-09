@@ -608,8 +608,9 @@ export default defineContentScript({
         }
       }
 
-      // Shader time
+      // Shader time + scene animations
       crtMaterial.uniforms.u_time.value = time;
+      sceneData.animate(time, dt);
 
       // Update drunk post-processing
       if (drunkPost) {
