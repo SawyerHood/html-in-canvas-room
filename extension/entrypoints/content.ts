@@ -44,6 +44,8 @@ export default defineContentScript({
     let frameOverlay: HTMLImageElement | null = null;
     let lastSnapshotTime = 0;
     let hasRenderedFirstFrame = false;
+    let settingsPanel: HTMLDivElement | null = null;
+    let settingsVisible = false;
     let drunkIntensity = 0;
     let drunkTarget = 0;
     let drunkPost: DrunkPostEffect | null = null;
@@ -250,6 +252,76 @@ export default defineContentScript({
 
     function onResizeDrunk() {
       drunkPost?.resize(window.innerWidth, window.innerHeight);
+    }
+
+    const SHADER_TOGGLES = [
+      { key: 'dither', label: 'PS1 Dither', target: 'post' },
+      { key: 'sway', label: 'Drunk Sway', target: 'post' },
+      { key: 'doubleVision', label: 'Double Vision', target: 'post' },
+      { key: 'chromatic', label: 'Chromatic Aberration', target: 'post' },
+      { key: 'blur', label: 'Drunk Blur', target: 'post' },
+      { key: 'vignette', label: 'Vignette', target: 'post' },
+      { key: 'barrel', label: 'Barrel Distortion', target: 'crt' },
+      { key: 'scanlines', label: 'Scanlines', target: 'crt' },
+      { key: 'phosphor', label: 'Phosphor Subpixels', target: 'crt' },
+      { key: 'flicker', label: 'CRT Flicker', target: 'crt' },
+      { key: 'reflection', label: 'Glass Reflection', target: 'crt' },
+    ];
+    const toggleState: Record<string, boolean> = {};
+    SHADER_TOGGLES.forEach(t => toggleState[t.key] = true);
+
+    function createSettingsPanel() {
+      if (settingsPanel) return;
+      settingsPanel = document.createElement('div');
+      settingsPanel.id = '__crt-settings';
+      let html = `<style>
+        #__crt-settings {
+          position:fixed; top:10px; right:10px; z-index:2147483647;
+          background:rgba(10,10,18,0.92); color:#c0c0e0;
+          font:13px system-ui,sans-serif; padding:12px 16px;
+          border-radius:8px; border:1px solid rgba(100,100,180,0.3);
+          pointer-events:auto; min-width:180px;
+        }
+        #__crt-settings h3 { margin:0 0 8px; font-size:12px; text-transform:uppercase;
+          letter-spacing:1px; color:#808098; }
+        #__crt-settings label { display:flex; align-items:center; gap:8px;
+          padding:3px 0; cursor:pointer; }
+        #__crt-settings label:hover { color:white; }
+        #__crt-settings input { accent-color:#6666cc; }
+        #__crt-settings .sep { border-top:1px solid rgba(100,100,180,0.2);
+          margin:6px 0; }
+      </style>`;
+      html += '<h3>Shader Toggles <kbd style="float:right;opacity:0.5">`</kbd></h3>';
+      html += '<div><strong style="font-size:11px;color:#808098">Post-Processing</strong></div>';
+      for (const t of SHADER_TOGGLES) {
+        if (t.key === 'barrel') html += '<div class="sep"></div><div><strong style="font-size:11px;color:#808098">CRT Monitor</strong></div>';
+        html += `<label><input type="checkbox" data-key="${t.key}" ${toggleState[t.key] ? 'checked' : ''}> ${t.label}</label>`;
+      }
+      settingsPanel.innerHTML = html;
+      settingsPanel.addEventListener('change', (e) => {
+        const input = e.target as HTMLInputElement;
+        const key = input.dataset.key;
+        if (!key) return;
+        toggleState[key] = input.checked;
+        const toggle = SHADER_TOGGLES.find(t => t.key === key);
+        if (!toggle) return;
+        if (toggle.target === 'post' && drunkPost) {
+          drunkPost.setToggle(key, input.checked);
+        } else if (toggle.target === 'crt' && crtMaterial) {
+          crtMaterial.uniforms[`u_${key}`].value = input.checked ? 1 : 0;
+        }
+      });
+      document.body.appendChild(settingsPanel);
+    }
+
+    function toggleSettings() {
+      settingsVisible = !settingsVisible;
+      if (settingsVisible) {
+        createSettingsPanel();
+        if (settingsPanel) settingsPanel.style.display = '';
+      } else if (settingsPanel) {
+        settingsPanel.style.display = 'none';
+      }
     }
 
     function createBlackoutOverlay() {
@@ -519,6 +591,7 @@ export default defineContentScript({
 
       window.removeEventListener('resize', onResizeDrunk);
       removeBeerCan3D();
+      settingsPanel?.remove(); settingsPanel = null;
       if (musicIframe) { musicIframe.remove(); musicIframe = null; musicPlaying = false; }
 
       if (drunkPost) { drunkPost.dispose(); drunkPost = null; }
@@ -561,6 +634,11 @@ export default defineContentScript({
       const tag = (document.activeElement?.tagName || '').toLowerCase();
       if (tag === 'input' || tag === 'textarea' || tag === 'select' ||
           (document.activeElement as HTMLElement)?.isContentEditable) return;
+
+      if (e.key === '`') {
+        toggleSettings();
+        return;
+      }
 
       if (e.key === 'Escape' && seated) {
         e.preventDefault();

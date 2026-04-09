@@ -18,6 +18,12 @@ uniform float u_time;
 uniform float u_intensity;
 uniform vec2 u_resolution;
 uniform float u_exposure;
+uniform float u_sway;
+uniform float u_doubleVision;
+uniform float u_chromatic;
+uniform float u_blur;
+uniform float u_vignette;
+uniform float u_dither;
 
 float hash(vec2 p) {
   float h = dot(p, vec2(127.1, 311.7));
@@ -44,64 +50,76 @@ void main() {
   float fx = i * mix(0.35, 1.0, brightGuard);
 
   // 1. Global sway
-  uv.x += sin(t * 1.5) * 0.025 * fx;
-  uv.y += cos(t * 1.1) * 0.012 * fx;
-  uv.x += sin(t * 0.7 + 1.5) * 0.015 * fx;
-  uv.y += cos(t * 0.5 + 0.8) * 0.008 * fx;
+  if (u_sway > 0.5) {
+    uv.x += sin(t * 1.5) * 0.025 * fx;
+    uv.y += cos(t * 1.1) * 0.012 * fx;
+    uv.x += sin(t * 0.7 + 1.5) * 0.015 * fx;
+    uv.y += cos(t * 0.5 + 0.8) * 0.008 * fx;
 
-  // 2. Hiccup jolts
-  float hiccupSeed = floor(t * 2.5);
-  float hiccupChance = hash(vec2(hiccupSeed, 42.0));
-  float hiccupActive = step(0.92, hiccupChance) * fx;
-  float hiccupPhase = fract(t * 2.5);
-  float hiccupFade = 1.0 - smoothstep(0.0, 0.3, hiccupPhase);
-  vec2 hiccupDir = vec2(
-    hash(vec2(hiccupSeed, 13.0)) - 0.5,
-    hash(vec2(hiccupSeed, 77.0)) - 0.5
-  );
-  uv += hiccupDir * 0.04 * hiccupActive * hiccupFade;
+    // 2. Hiccup jolts
+    float hiccupSeed = floor(t * 2.5);
+    float hiccupChance = hash(vec2(hiccupSeed, 42.0));
+    float hiccupActive = step(0.92, hiccupChance) * fx;
+    float hiccupPhase = fract(t * 2.5);
+    float hiccupFade = 1.0 - smoothstep(0.0, 0.3, hiccupPhase);
+    vec2 hiccupDir = vec2(
+      hash(vec2(hiccupSeed, 13.0)) - 0.5,
+      hash(vec2(hiccupSeed, 77.0)) - 0.5
+    );
+    uv += hiccupDir * 0.04 * hiccupActive * hiccupFade;
+  }
 
   uv = clamp(uv, 0.0, 1.0);
 
-  // 3. Double/triple vision (all samples pre-tone-mapped)
-  float visionOffset = 0.010 * fx;
-  vec2 off1 = vec2(visionOffset, visionOffset * 0.5);
-  vec2 off2 = vec2(-visionOffset * 0.8, visionOffset * 0.7);
-  vec3 s0 = tm(uv);
-  vec3 s1 = tm(uv + off1);
-  vec3 s2 = tm(uv + off2);
-  vec3 col = mix(s0, s0 * 0.55 + s1 * 0.27 + s2 * 0.18, fx);
+  // 3. Double/triple vision
+  vec3 col = tm(uv);
+  if (u_doubleVision > 0.5) {
+    float visionOffset = 0.010 * fx;
+    vec2 off1 = vec2(visionOffset, visionOffset * 0.5);
+    vec2 off2 = vec2(-visionOffset * 0.8, visionOffset * 0.7);
+    vec3 s0 = col;
+    vec3 s1 = tm(uv + off1);
+    vec3 s2 = tm(uv + off2);
+    col = mix(s0, s0 * 0.55 + s1 * 0.27 + s2 * 0.18, fx);
+  }
 
   // 4. Chromatic aberration
-  float aberr = 0.006 * fx;
-  col.r = tm(uv + vec2(aberr, 0.0)).r * (1.0 - fx)
-        + tm(uv + off1 + vec2(aberr, 0.0)).r * fx * 0.45
-        + col.r * fx * 0.55;
-  col.b = tm(uv - vec2(aberr, 0.0)).b * (1.0 - fx)
-        + tm(uv + off2 - vec2(aberr, 0.0)).b * fx * 0.45
-        + col.b * fx * 0.55;
+  if (u_chromatic > 0.5) {
+    float aberr = 0.006 * fx;
+    col.r = tm(uv + vec2(aberr, 0.0)).r * (1.0 - fx)
+          + tm(uv + vec2(aberr, 0.0)).r * fx * 0.45
+          + col.r * fx * 0.55;
+    col.b = tm(uv - vec2(aberr, 0.0)).b * (1.0 - fx)
+          + tm(uv - vec2(aberr, 0.0)).b * fx * 0.45
+          + col.b * fx * 0.55;
+  }
 
   // 5. Blur
-  float blurSize = 1.25 * fx / u_resolution.x;
-  vec3 blur = col;
-  blur += tm(uv + vec2(blurSize, 0.0));
-  blur += tm(uv - vec2(blurSize, 0.0));
-  blur += tm(uv + vec2(0.0, blurSize));
-  blur += tm(uv - vec2(0.0, blurSize));
-  col = mix(col, blur / 5.0, fx * 0.45);
+  if (u_blur > 0.5) {
+    float blurSize = 1.25 * fx / u_resolution.x;
+    vec3 blr = col;
+    blr += tm(uv + vec2(blurSize, 0.0));
+    blr += tm(uv - vec2(blurSize, 0.0));
+    blr += tm(uv + vec2(0.0, blurSize));
+    blr += tm(uv - vec2(0.0, blurSize));
+    col = mix(col, blr / 5.0, fx * 0.45);
+  }
 
   // 6. Vignette + overall dim
-  vec2 center = vUv - 0.5;
-  float vig = 1.0 - dot(center, center) * 1.5 * fx;
-  col *= clamp(vig, 0.0, 1.0);
-  col *= 1.0 - fx * 0.15;
+  if (u_vignette > 0.5) {
+    vec2 center = vUv - 0.5;
+    float vig = 1.0 - dot(center, center) * 1.5 * fx;
+    col *= clamp(vig, 0.0, 1.0);
+    col *= 1.0 - fx * 0.15;
+  }
 
   // 7. Linear -> sRGB before dither (so dithering happens in perceptual space)
   col = pow(col, vec3(1.0 / 2.2));
 
-  // 8. PS1-style ordered dither + color quantization (always on)
+  // 8. PS1-style ordered dither + color quantization
+  if (u_dither > 0.5) {
   float brightness = dot(col, vec3(0.299, 0.587, 0.114));
-  float levels = mix(5.0, 48.0, smoothstep(0.3, 0.7, brightness)); // extra chunky in dark areas, smooth only on bright screens
+  float levels = mix(5.0, 48.0, smoothstep(0.3, 0.7, brightness));
   vec2 pixel = floor(gl_FragCoord.xy);
   int px = int(mod(pixel.x, 4.0));
   int py = int(mod(pixel.y, 4.0));
@@ -118,6 +136,7 @@ void main() {
   else if (idx == 14) bayer = 13.0; else bayer = 5.0;
   float dither = (bayer / 16.0 - 0.5) / levels;
   col = floor((col + dither) * levels) / levels;
+  } // end dither
 
   gl_FragColor = vec4(col, 1.0);
 }
@@ -145,6 +164,12 @@ export class DrunkPostEffect {
         u_intensity: { value: 0 },
         u_resolution: { value: new THREE.Vector2(width * dpr, height * dpr) },
         u_exposure: { value: exposure },
+        u_sway: { value: 1 },
+        u_doubleVision: { value: 1 },
+        u_chromatic: { value: 1 },
+        u_blur: { value: 1 },
+        u_vignette: { value: 1 },
+        u_dither: { value: 1 },
       },
       vertexShader,
       fragmentShader,
@@ -195,6 +220,11 @@ export class DrunkPostEffect {
 
   setTime(t: number) {
     this.material.uniforms.u_time.value = t;
+  }
+
+  setToggle(name: string, on: boolean) {
+    const u = this.material.uniforms[`u_${name}`];
+    if (u) u.value = on ? 1 : 0;
   }
 
   resize(width: number, height: number) {
