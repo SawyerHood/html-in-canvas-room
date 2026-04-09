@@ -27,6 +27,15 @@ The key API is the [HTML-in-Canvas proposal](https://github.com/WICG/html-in-can
 
 This requires a Chrome build with the HTML-in-Canvas flag enabled (`chrome://flags/#canvas-draw-element`).
 
+## Prerequisites
+
+This demo requires the HTML-in-Canvas API, which is only available in **Chrome Canary** with an experimental flag enabled:
+
+1. Download [Chrome Canary](https://www.google.com/chrome/canary/)
+2. Navigate to `chrome://flags/#canvas-draw-element`
+3. Set **"Canvas Draw Element"** to **Enabled**
+4. Relaunch Chrome Canary
+
 ## Setup
 
 ```bash
@@ -35,7 +44,7 @@ npm install
 npm run dev
 ```
 
-Load the extension in Chrome, click the extension icon on any page to activate.
+Load the unpacked extension in Chrome Canary (`chrome://extensions` → Developer mode → Load unpacked → select `extension/.output/chrome-mv3`), then click the extension icon on any page to activate.
 
 ## Controls
 
