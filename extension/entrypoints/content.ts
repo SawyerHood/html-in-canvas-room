@@ -15,7 +15,7 @@ const DESK_CENTER = new THREE.Vector3(0, SCREEN_CENTER_Y, -2.5);
 const SIT_DISTANCE = 5.0;
 const HUD_ID = '__crt-hud';
 const DECAY_DURATION = 60; // seconds from 100% to 0%
-const DRINK_AMOUNT = 0.2;  // each chug adds 20%
+const DRINK_AMOUNT = 0.34; // each chug adds ~34%, 3 drinks to blackout
 const SCREEN_Y = SCREEN_CENTER_Y;
 const SCREEN_Z = SCREEN_CENTER_Z;
 
