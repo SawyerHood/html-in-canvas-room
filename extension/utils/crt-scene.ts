@@ -104,14 +104,63 @@ export function createScene(canvas: HTMLCanvasElement) {
   rightWall.rotation.y = -Math.PI / 2;
   scene.add(rightWall);
 
-  // Front wall (behind player)
-  const frontWall = new THREE.Mesh(
-    new THREE.PlaneGeometry(ROOM_SIZE, ROOM_HEIGHT),
-    new THREE.MeshStandardMaterial({ color: 0x242430, roughness: 0.85 }),
-  );
+  // Front wall (behind player) — solid
+  const frontWallMat = new THREE.MeshStandardMaterial({ color: 0x242430, roughness: 0.85 });
+  const frontWall = new THREE.Mesh(new THREE.PlaneGeometry(ROOM_SIZE, ROOM_HEIGHT), frontWallMat);
   frontWall.position.set(0, ROOM_HEIGHT / 2, ROOM_SIZE / 2);
   frontWall.rotation.y = Math.PI;
   scene.add(frontWall);
+
+  // Door (decorative, mounted on the wall)
+  const doorX = -1.5;
+  const doorW = 0.9;
+  const doorH = 2.2;
+  const wallZ = ROOM_SIZE / 2 - 0.01;
+
+  // Door frame
+  const doorFrameMat = new THREE.MeshStandardMaterial({ color: 0x1a1a22, roughness: 0.6 });
+  const dfTop = new THREE.Mesh(new THREE.BoxGeometry(doorW + 0.12, 0.06, 0.06), doorFrameMat);
+  dfTop.position.set(doorX, doorH + 0.03, wallZ);
+  scene.add(dfTop);
+  const dfLeft = new THREE.Mesh(new THREE.BoxGeometry(0.06, doorH, 0.06), doorFrameMat);
+  dfLeft.position.set(doorX - doorW / 2 - 0.03, doorH / 2, wallZ);
+  scene.add(dfLeft);
+  const dfRight = new THREE.Mesh(new THREE.BoxGeometry(0.06, doorH, 0.06), doorFrameMat);
+  dfRight.position.set(doorX + doorW / 2 + 0.03, doorH / 2, wallZ);
+  scene.add(dfRight);
+
+  // Door panel
+  const doorMat = new THREE.MeshStandardMaterial({ color: 0x3a2a1a, roughness: 0.75 });
+  const doorPanel = new THREE.Mesh(new THREE.BoxGeometry(doorW, doorH, 0.04), doorMat);
+  doorPanel.position.set(doorX, doorH / 2, wallZ - 0.01);
+  scene.add(doorPanel);
+
+  // Decorative inset panels
+  const panelMat = new THREE.MeshStandardMaterial({ color: 0x2e2010, roughness: 0.8 });
+  for (const [py, ph] of [[0.55, 0.7], [1.55, 0.7]] as [number, number][]) {
+    const panel = new THREE.Mesh(new THREE.BoxGeometry(doorW * 0.6, ph, 0.005), panelMat);
+    panel.position.set(doorX, py, wallZ - 0.035);
+    scene.add(panel);
+  }
+
+  // Door handle
+  const knobMat = new THREE.MeshStandardMaterial({ color: 0xaa8844, roughness: 0.3, metalness: 0.6 });
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.025, 12, 8), knobMat);
+  knob.position.set(doorX + doorW / 2 - 0.08, 1.0, wallZ - 0.045);
+  scene.add(knob);
+  const knobPlate = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.015, 12), knobMat);
+  knobPlate.rotation.x = Math.PI / 2;
+  knobPlate.position.set(doorX + doorW / 2 - 0.08, 1.0, wallZ - 0.035);
+  scene.add(knobPlate);
+
+  // Peephole
+  const peephole = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.01, 0.01, 0.05, 8),
+    new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.3, metalness: 0.5 }),
+  );
+  peephole.rotation.x = Math.PI / 2;
+  peephole.position.set(doorX, 1.6, wallZ - 0.03);
+  scene.add(peephole);
 
   // Left wall — open to city view with window frame/ledge for depth
   const frameMat = new THREE.MeshStandardMaterial({ color: 0x222230, roughness: 0.7 });
@@ -223,17 +272,26 @@ export function createScene(canvas: HTMLCanvasElement) {
 
   // Baseboard trim
   const trimMat = new THREE.MeshStandardMaterial({ color: 0x0a0a10, roughness: 0.7 });
-  const trimGeom = new THREE.BoxGeometry(ROOM_SIZE, 0.12, 0.04);
-  for (const [x, z, ry] of [
-    [0, -ROOM_SIZE / 2 + 0.02, 0],
-    [0, ROOM_SIZE / 2 - 0.02, 0],
-    [ROOM_SIZE / 2 - 0.02, 0, Math.PI / 2],
-  ] as [number, number, number][]) {
-    const trim = new THREE.Mesh(trimGeom, trimMat);
-    trim.position.set(x, 0.06, z);
-    trim.rotation.y = ry;
-    scene.add(trim);
-  }
+  // Back wall
+  const trimBack = new THREE.Mesh(new THREE.BoxGeometry(ROOM_SIZE, 0.12, 0.04), trimMat);
+  trimBack.position.set(0, 0.06, -ROOM_SIZE / 2 + 0.02);
+  scene.add(trimBack);
+  // Right wall
+  const trimRight = new THREE.Mesh(new THREE.BoxGeometry(ROOM_SIZE, 0.12, 0.04), trimMat);
+  trimRight.position.set(ROOM_SIZE / 2 - 0.02, 0.06, 0);
+  trimRight.rotation.y = Math.PI / 2;
+  scene.add(trimRight);
+  // Front wall — split around door (doorX=-1.5, doorW=0.9)
+  const doorLeft = -1.5 - 0.9 / 2 - 0.03; // left edge of door frame
+  const doorRight = -1.5 + 0.9 / 2 + 0.03; // right edge of door frame
+  const trimFrontLeftW = ROOM_SIZE / 2 + doorLeft;
+  const trimFrontLeft = new THREE.Mesh(new THREE.BoxGeometry(trimFrontLeftW, 0.12, 0.04), trimMat);
+  trimFrontLeft.position.set(-ROOM_SIZE / 2 + trimFrontLeftW / 2, 0.06, ROOM_SIZE / 2 - 0.02);
+  scene.add(trimFrontLeft);
+  const trimFrontRightW = ROOM_SIZE / 2 - doorRight;
+  const trimFrontRight = new THREE.Mesh(new THREE.BoxGeometry(trimFrontRightW, 0.12, 0.04), trimMat);
+  trimFrontRight.position.set(ROOM_SIZE / 2 - trimFrontRightW / 2, 0.06, ROOM_SIZE / 2 - 0.02);
+  scene.add(trimFrontRight);
 
   // ===== CRT Monitor — scaled to match chair proportions =====
   const monitorGroup = new THREE.Group();
