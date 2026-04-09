@@ -8,10 +8,17 @@ const PITCH_LIMIT = Math.PI * 0.47; // ~85 degrees
 const ROOM_HALF = 3.8;
 const EYE_HEIGHT = 1.6;
 
+export interface Collider {
+  minX: number; maxX: number;
+  minZ: number; maxZ: number;
+  cx: number; cz: number;
+}
+
 export class FPSControls {
   camera: THREE.Camera;
   canvas: HTMLCanvasElement;
   enabled = true;
+  colliders: Collider[] = [];
 
   private yaw = 0;
   private pitch = 0;
@@ -110,6 +117,24 @@ export class FPSControls {
       -ROOM_HALF,
       Math.min(ROOM_HALF, this.camera.position.z),
     );
+
+    // Resolve furniture collisions (push out on shortest axis)
+    const px = this.camera.position.x;
+    const pz = this.camera.position.z;
+    for (const c of this.colliders) {
+      if (px > c.minX && px < c.maxX && pz > c.minZ && pz < c.maxZ) {
+        const pushLeft = px - c.minX;
+        const pushRight = c.maxX - px;
+        const pushFront = pz - c.minZ;
+        const pushBack = c.maxZ - pz;
+        const min = Math.min(pushLeft, pushRight, pushFront, pushBack);
+        if (min === pushLeft) this.camera.position.x = c.minX;
+        else if (min === pushRight) this.camera.position.x = c.maxX;
+        else if (min === pushFront) this.camera.position.z = c.minZ;
+        else this.camera.position.z = c.maxZ;
+      }
+    }
+
     this.camera.position.y = EYE_HEIGHT;
   }
 

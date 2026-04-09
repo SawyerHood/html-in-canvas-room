@@ -337,6 +337,7 @@ export default defineContentScript({
 
       // FPS controls
       fps = new FPSControls(data.camera, canvas);
+      fps.colliders = data.colliders;
 
       // HUD
       createHUD();

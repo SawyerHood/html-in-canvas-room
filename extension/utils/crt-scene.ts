@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { CITY_BACKDROP_URL } from './skybox-data';
+import { NEON_DRIFT_URL, LAST_SIGNAL_URL } from './poster-data';
 import { ROOM_SIZE, ROOM_HEIGHT, DESK_TOP, SCR_W, SCR_H } from './scene/constants';
 
 export function createScene(canvas: HTMLCanvasElement) {
@@ -19,6 +20,8 @@ export function createScene(canvas: HTMLCanvasElement) {
   cityImg.onload = () => {
     const tex = new THREE.Texture(cityImg);
     tex.colorSpace = THREE.SRGBColorSpace;
+    tex.minFilter = THREE.NearestFilter;
+    tex.magFilter = THREE.NearestFilter;
     tex.needsUpdate = true;
 
     // City backdrop — curved cylinder with vertical curvature (dome-like)
@@ -57,6 +60,17 @@ export function createScene(canvas: HTMLCanvasElement) {
   scene.add(camera); // camera must be in scene for children (held items) to render
 
   // ROOM_SIZE, ROOM_HEIGHT imported from scene/constants
+
+  // Collision boxes — furniture pushes colliders here as it's built
+  const PLAYER_RADIUS = 0.25;
+  const colliders: { minX: number; maxX: number; minZ: number; maxZ: number; cx: number; cz: number }[] = [];
+  function addCollider(cx: number, cz: number, hw: number, hd: number) {
+    colliders.push({
+      minX: cx - hw - PLAYER_RADIUS, maxX: cx + hw + PLAYER_RADIUS,
+      minZ: cz - hd - PLAYER_RADIUS, maxZ: cz + hd + PLAYER_RADIUS,
+      cx, cz,
+    });
+  }
 
   // ===== Floor — dark carpet =====
   const floor = new THREE.Mesh(
@@ -357,6 +371,7 @@ export function createScene(canvas: HTMLCanvasElement) {
   const deskMesh = new THREE.Mesh(new THREE.BoxGeometry(3, 0.06, 1.5), deskMat);
   deskMesh.position.set(0, DESK_TOP, -3.25);
   scene.add(deskMesh);
+  addCollider(0, -3.25, 1.7, 0.95); // desk
 
   const legMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.5, metalness: 0.3 });
   const legGeom = new THREE.BoxGeometry(0.06, DESK_TOP, 0.06);
@@ -411,6 +426,7 @@ export function createScene(canvas: HTMLCanvasElement) {
   const chairSeat = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.06, 0.6), chairBlack);
   chairSeat.position.set(0, 0.5, -1.6);
   scene.add(chairSeat);
+  addCollider(0, -1.45, 0.5, 0.45); // chair
   // Red trim on seat edges
   const seatTrimL = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.08, 0.6), chairRed);
   seatTrimL.position.set(-0.35, 0.5, -1.6);
@@ -550,6 +566,7 @@ export function createScene(canvas: HTMLCanvasElement) {
   shelfGroup.position.set(2.2, 0, -ROOM_SIZE / 2 + 0.25);
   shelfGroup.rotation.y = 0;
   scene.add(shelfGroup);
+  addCollider(2.2, -ROOM_SIZE / 2 + 0.25, 0.7, 0.3); // bookshelf
 
   // Lava lamp glow light
   const lavaGlow = new THREE.PointLight(0xff5010, 0.8, 3, 2);
@@ -561,6 +578,7 @@ export function createScene(canvas: HTMLCanvasElement) {
   const fridge = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.7, 0.45), fridgeMat);
   fridge.position.set(1.0, 0.35, -3.3);
   scene.add(fridge);
+  addCollider(1.0, -3.3, 0.35, 0.35); // mini fridge
   // Door line
   const fridgeDoor = new THREE.Mesh(
     new THREE.BoxGeometry(0.48, 0.01, 0.43),
@@ -601,27 +619,33 @@ export function createScene(canvas: HTMLCanvasElement) {
 
   // ===== Poster frames on walls =====
   const posterFrame = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.5 });
-  const posters = [
-    { pos: [ROOM_SIZE / 2 - 0.03, 1.6, -1.0], ry: -Math.PI / 2, color: 0xff4060 },
-    { pos: [0, 1.6, ROOM_SIZE / 2 - 0.03], ry: Math.PI, color: 0x40ff60 },
+  const posterDefs = [
+    { pos: [ROOM_SIZE / 2 - 0.03, 1.6, -1.0], ry: -Math.PI / 2, url: NEON_DRIFT_URL },
+    { pos: [0, 1.6, ROOM_SIZE / 2 - 0.03], ry: Math.PI, url: LAST_SIGNAL_URL },
   ];
-  for (const p of posters) {
+  for (const p of posterDefs) {
     // Frame
     const frame = new THREE.Mesh(new THREE.BoxGeometry(0.85, 1.15, 0.03), posterFrame);
     frame.position.set(p.pos[0], p.pos[1], p.pos[2]);
     frame.rotation.y = p.ry;
     scene.add(frame);
-    // Poster face
-    const face = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.75, 1.05),
-      new THREE.MeshStandardMaterial({ color: p.color, roughness: 0.8 }),
-    );
-    face.position.set(p.pos[0], p.pos[1], p.pos[2]);
-    face.rotation.y = p.ry;
-    // Offset forward slightly
+    // Poster face with texture
     const normal = new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), p.ry);
-    face.position.addScaledVector(normal, 0.02);
-    scene.add(face);
+    const posterImg = new Image();
+    posterImg.onload = () => {
+      const tex = new THREE.Texture(posterImg);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.needsUpdate = true;
+      const face = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.75, 1.05),
+        new THREE.MeshStandardMaterial({ map: tex, roughness: 0.8 }),
+      );
+      face.position.set(p.pos[0], p.pos[1], p.pos[2]);
+      face.rotation.y = p.ry;
+      face.position.addScaledVector(normal, 0.02);
+      scene.add(face);
+    };
+    posterImg.src = p.url;
   }
 
   // ===== Trash can — near desk =====
@@ -629,6 +653,7 @@ export function createScene(canvas: HTMLCanvasElement) {
   const trashCan = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.15, 0.4, 16, 1, true), trashMat);
   trashCan.position.set(-1.3, 0.2, -2.0);
   scene.add(trashCan);
+  addCollider(-1.3, -2.0, 0.25, 0.25); // trash can
   // Bottom
   const trashBottom = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.02, 16), trashMat);
   trashBottom.position.set(-1.3, 0.01, -2.0);
@@ -732,6 +757,7 @@ export function createScene(canvas: HTMLCanvasElement) {
     gameCase.rotation.y = (Math.random() - 0.5) * 0.15;
     scene.add(gameCase);
   }
+  addCollider(3.0, -ROOM_SIZE / 2 + 0.3, 0.2, 0.2); // game cases
 
   // ===== Bean bag chair in far corner =====
   const beanBag = new THREE.Mesh(
@@ -739,8 +765,35 @@ export function createScene(canvas: HTMLCanvasElement) {
     new THREE.MeshStandardMaterial({ color: 0x3a2050, roughness: 0.95 }),
   );
   beanBag.scale.set(1, 0.6, 1);
-  beanBag.position.set(3.2, 0.27, 3.0);
+  beanBag.position.set(3.0, 0.27, 2.8);
   scene.add(beanBag);
+  addCollider(3.0, 2.8, 0.55, 0.55); // bean bag
+
+  // ===== Floor lamp near bean bag =====
+  const lampBaseMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.5, metalness: 0.3 });
+  // Base
+  const lampBase = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.18, 0.03, 16), lampBaseMat);
+  lampBase.position.set(3.5, 0.015, 3.5);
+  scene.add(lampBase);
+  addCollider(3.5, 3.5, 0.2, 0.2); // floor lamp
+  // Pole
+  const lampPole = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 1.4, 8), lampBaseMat);
+  lampPole.position.set(3.5, 0.73, 3.5);
+  scene.add(lampPole);
+  // Shade (cone, open bottom)
+  const shadeMat = new THREE.MeshStandardMaterial({
+    color: 0xddc8a0, roughness: 0.8, side: THREE.DoubleSide,
+  });
+  const lampShade = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.08, 0.22, 0.28, 16, 1, true),
+    shadeMat,
+  );
+  lampShade.position.set(3.5, 1.57, 3.5);
+  scene.add(lampShade);
+  // Warm light
+  const lampLight = new THREE.PointLight(0xffcc88, 2.0, 6, 1.5);
+  lampLight.position.set(3.5, 1.45, 3.5);
+  scene.add(lampLight);
 
   // ===== Wall shelf with figurines (right wall, above game cases) =====
   const wallShelf = new THREE.Mesh(
@@ -1045,5 +1098,5 @@ export function createScene(canvas: HTMLCanvasElement) {
   }
   window.addEventListener('resize', onResize);
 
-  return { renderer, scene, camera, screenMesh, interactionZone, onResize, animate };
+  return { renderer, scene, camera, screenMesh, interactionZone, onResize, animate, colliders };
 }
