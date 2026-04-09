@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { CITY_BACKDROP_URL } from './skybox-data';
+import { ROOM_SIZE, ROOM_HEIGHT, DESK_TOP, SCR_W, SCR_H } from './scene/constants';
 
 export function createScene(canvas: HTMLCanvasElement) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
@@ -55,8 +56,7 @@ export function createScene(canvas: HTMLCanvasElement) {
   camera.lookAt(0, 0.5, 0);
   scene.add(camera); // camera must be in scene for children (held items) to render
 
-  const ROOM_SIZE = 8;
-  const ROOM_HEIGHT = 3;
+  // ROOM_SIZE, ROOM_HEIGHT imported from scene/constants
 
   // ===== Floor — dark carpet =====
   const floor = new THREE.Mesh(
@@ -322,7 +322,7 @@ export function createScene(canvas: HTMLCanvasElement) {
   monitorGroup.add(bezelMesh);
 
   // Screen — curved plane
-  const SCR_W = 0.54, SCR_H = 0.40;
+  // SCR_W, SCR_H imported from scene/constants
   const screenGeom = new THREE.PlaneGeometry(SCR_W, SCR_H, 40, 40);
   const screenPos = screenGeom.attributes.position;
   for (let i = 0; i < screenPos.count; i++) {
@@ -348,7 +348,7 @@ export function createScene(canvas: HTMLCanvasElement) {
   monitorGroup.add(standNeck);
 
   // Position group so stand sits on desk surface
-  const DESK_TOP = 0.75; // desk surface height
+  // DESK_TOP imported from scene/constants
   monitorGroup.position.set(0, DESK_TOP, -3.2);
   scene.add(monitorGroup);
 

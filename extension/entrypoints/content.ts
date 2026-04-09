@@ -5,12 +5,10 @@ import { createScene } from '@/utils/crt-scene';
 import { createCRTMaterial } from '@/utils/crt-material';
 import { FPSControls } from '@/utils/fps-controls';
 import { DrunkPostEffect } from '@/utils/drunk-post';
+import { SCREEN_CENTER_Y, SCREEN_CENTER_Z, SCREEN_HALF_W, SCREEN_HALF_H } from '@/utils/scene/constants';
 import type { ToContentMessage, CRTState } from '@/utils/messages';
 
 const TAG = '[CRTWorld]';
-// Monitor sits on desk (top=0.75), screen center at desk+0.3=1.05
-const SCREEN_CENTER_Y = 0.75 + 0.3;  // DESK_TOP + screen local y
-const SCREEN_CENTER_Z = -3.2 + 0.295; // monitorGroup z + screen local z
 const SEATED_POS = new THREE.Vector3(0, SCREEN_CENTER_Y, SCREEN_CENTER_Z + 0.45);
 const SEATED_LOOK = new THREE.Vector3(0, SCREEN_CENTER_Y, SCREEN_CENTER_Z);
 const DESK_CENTER = new THREE.Vector3(0, SCREEN_CENTER_Y, -2.5);
@@ -18,10 +16,6 @@ const SIT_DISTANCE = 5.0;
 const HUD_ID = '__crt-hud';
 const DECAY_DURATION = 60; // seconds from 100% to 0%
 const DRINK_AMOUNT = 0.2;  // each chug adds 20%
-
-// Screen mesh dimensions (must match crt-scene.ts)
-const SCREEN_HALF_W = 0.54 / 2;
-const SCREEN_HALF_H = 0.40 / 2;
 const SCREEN_Y = SCREEN_CENTER_Y;
 const SCREEN_Z = SCREEN_CENTER_Z;
 
