@@ -48,6 +48,11 @@ export default defineContentScript({
     let drunkPost: DrunkPostEffect | null = null;
     let beerCanGroup: THREE.Group | null = null;
     let drinkAnim = -1; // -1 = inactive, 0-1 = animating
+    let musicPlaying = false;
+    let musicIframe: HTMLIFrameElement | null = null;
+    let nearRecordPlayer = false;
+    let selectedRecord = 0;
+    let playingRecord = -1;
 
     // Beer can resting pose in camera space
     const BEER_REST_POS = new THREE.Vector3(0.12, -0.10, -0.25);
@@ -154,6 +159,7 @@ export default defineContentScript({
       } catch { /* ignore */ }
     }
 
+
     function createHUD() {
       hud = document.createElement('div');
       hud.id = HUD_ID;
@@ -213,10 +219,15 @@ export default defineContentScript({
       } else if (!fps?.isLocked) {
         hud.classList.remove('seated');
         prompt.innerHTML = 'Click to look around &middot; <kbd>WASD</kbd> to move';
+      } else if (nearRecordPlayer && sceneData) {
+        hud.classList.remove('seated');
+        const rec = sceneData.records[selectedRecord];
+        prompt.innerHTML =
+          `<kbd>&larr;</kbd><kbd>&rarr;</kbd> browse &middot; <kbd>E</kbd> play &middot; ${rec.name}` + beerHint;
       } else if (lookingAtDesk) {
         hud.classList.remove('seated');
-        prompt.innerHTML =
-          '<kbd>E</kbd> sit &middot; <kbd>F</kbd> grab a beer' + beerHint;
+        const action = beerCanGroup ? 'sit down' : 'grab a beer';
+        prompt.innerHTML = `<kbd>E</kbd> ${action}` + beerHint;
       } else {
         hud.classList.remove('seated');
         prompt.innerHTML = '<kbd>WASD</kbd> to move' + beerHint;
@@ -281,13 +292,56 @@ export default defineContentScript({
       removeBeerCan3D();
     }
 
+    function playRecord(index: number) {
+      if (!sceneData) return;
+      // Stop current
+      musicIframe?.remove();
+      musicIframe = null;
+
+      selectedRecord = index;
+      const rec = sceneData.records[index];
+
+      // Update vinyl label color to match selected record
+      (sceneData.labelDisc.material as THREE.MeshStandardMaterial).color.setHex(rec.color);
+
+      // Start YouTube iframe for audio
+      musicIframe = document.createElement('iframe');
+      musicIframe.src = `https://www.youtube.com/embed/${rec.url}?autoplay=1&loop=1&playlist=${rec.url}`;
+      musicIframe.allow = 'autoplay';
+      musicIframe.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;top:-10px;left:-10px;';
+      document.body.appendChild(musicIframe);
+      musicPlaying = true;
+      playingRecord = index;
+      updateHUD();
+      persistState();
+    }
+
+    function stopMusic() {
+      musicIframe?.remove();
+      musicIframe = null;
+      musicPlaying = false;
+      playingRecord = -1;
+      updateHUD();
+      persistState();
+    }
+
+    function updateRecordSelection() {
+      if (!sceneData) return;
+      const mesh = sceneData.recordMeshes[selectedRecord];
+      sceneData.selectedIndicator.visible = nearRecordPlayer;
+      if (mesh) {
+        sceneData.selectedIndicator.position.copy(mesh.position);
+        sceneData.selectedIndicator.position.x -= 0.01;
+      }
+    }
 
 
-    function activateCRT(startSeated = false, restoredDrunk = 0) {
+
+    function activateCRT(restored?: CRTState) {
       if (isActive) return;
 
       // Show last frame overlay immediately while scene loads
-      if (startSeated) showFrameOverlay();
+      if (restored?.seated) showFrameOverlay();
       hasRenderedFirstFrame = false;
 
       const result = activate();
@@ -309,7 +363,7 @@ export default defineContentScript({
       console.log(TAG, 'Activated');
 
       // Drunk post-processing (shader-based)
-      drunkIntensity = restoredDrunk;
+      drunkIntensity = restored?.drunkIntensity ?? 0;
       drunkPost = new DrunkPostEffect(
         window.innerWidth, window.innerHeight,
         renderer.toneMappingExposure,
@@ -359,20 +413,42 @@ export default defineContentScript({
 
       isActive = true;
 
-      // If restoring a seated session, sit down immediately
-      if (startSeated && fps && sceneData) {
-        seated = true;
-        seatTransition = 1;
-        sceneData.camera.position.copy(SEATED_POS);
-        const lookMat = new THREE.Matrix4().lookAt(
-          SEATED_POS, SEATED_LOOK, new THREE.Vector3(0, 1, 0),
-        );
-        seatTargetQuat.setFromRotationMatrix(lookMat);
-        sceneData.camera.quaternion.copy(seatTargetQuat);
-        fps.enabled = false;
-        updateHUD();
-        // Defer transform until after first render so matrices are fully computed
-        requestAnimationFrame(() => applyScreenTransform());
+      // Restore state from previous session
+      if (restored && fps && sceneData) {
+        if (restored.seated) {
+          seated = true;
+          seatTransition = 1;
+          sceneData.camera.position.copy(SEATED_POS);
+          const lookMat = new THREE.Matrix4().lookAt(
+            SEATED_POS, SEATED_LOOK, new THREE.Vector3(0, 1, 0),
+          );
+          seatTargetQuat.setFromRotationMatrix(lookMat);
+          sceneData.camera.quaternion.copy(seatTargetQuat);
+          fps.enabled = false;
+          updateHUD();
+          requestAnimationFrame(() => applyScreenTransform());
+        } else {
+          // Restore walking position and look direction
+          if (restored.posX != null && restored.posZ != null) {
+            sceneData.camera.position.x = restored.posX;
+            sceneData.camera.position.z = restored.posZ;
+          }
+          if (restored.yaw != null && restored.pitch != null) {
+            fps.yaw = restored.yaw;
+            fps.pitch = restored.pitch;
+          }
+        }
+        // Restore held beer
+        if (restored.hasBeer) {
+          beerCanGroup = createBeerCanMesh();
+          sceneData.camera.add(beerCanGroup);
+          updateHUD();
+        }
+        // Restore music
+        if (restored.musicRecord != null) selectedRecord = restored.musicRecord;
+        if (restored.musicPlaying) {
+          playRecord(selectedRecord);
+        }
       }
 
       persistState();
@@ -396,6 +472,7 @@ export default defineContentScript({
 
       window.removeEventListener('resize', onResizeDrunk);
       removeBeerCan3D();
+      if (musicIframe) { musicIframe.remove(); musicIframe = null; musicPlaying = false; }
 
       if (drunkPost) { drunkPost.dispose(); drunkPost = null; }
       drunkIntensity = 0;
@@ -442,6 +519,14 @@ export default defineContentScript({
         seatTransition = 1;
         removeScreenTransform();
         fps.enabled = true;
+        // Skip colliders the player is currently inside so they can walk out
+        const px = sceneData.camera.position.x;
+        const pz = sceneData.camera.position.z;
+        for (const c of fps.colliders) {
+          if (px > c.minX && px < c.maxX && pz > c.minZ && pz < c.maxZ) {
+            fps.skippedColliders.add(c);
+          }
+        }
         persistState();
         setTimeout(() => {
           fps?.lock();
@@ -450,21 +535,40 @@ export default defineContentScript({
       }
 
       if (e.key === 'f' || e.key === 'F') {
-        if (beerCanGroup) {
-          onDrink();
-        } else if (!seated && fps.isLocked && lookingAtDesk && sceneData) {
-          beerCanGroup = createBeerCanMesh();
-          sceneData.camera.add(beerCanGroup);
-          updateHUD();
-        }
+        if (beerCanGroup) onDrink();
       }
 
       if (e.key === 'q' || e.key === 'Q') {
         onToss();
       }
 
+      if (nearRecordPlayer && sceneData) {
+        const numRecords = sceneData.records.length;
+        if (e.key === 'ArrowLeft') {
+          selectedRecord = (selectedRecord - 1 + numRecords) % numRecords;
+          updateRecordSelection();
+          updateHUD();
+        }
+        if (e.key === 'ArrowRight') {
+          selectedRecord = (selectedRecord + 1) % numRecords;
+          updateRecordSelection();
+          updateHUD();
+        }
+      }
+
       if (e.key === 'e' || e.key === 'E') {
-        if (!seated && fps.isLocked && lookingAtDesk) {
+        if (seated || !fps.isLocked) return;
+        // Universal interact: pick best target based on proximity + look direction
+        if (nearRecordPlayer) {
+          if (musicPlaying && playingRecord === selectedRecord) stopMusic();
+          else playRecord(selectedRecord);
+        } else if (lookingAtDesk && !beerCanGroup && sceneData) {
+          // Near desk with no beer — grab one
+          beerCanGroup = createBeerCanMesh();
+          sceneData.camera.add(beerCanGroup);
+          updateHUD();
+        } else if (lookingAtDesk) {
+          // Near desk with beer — sit down
           seated = true;
           seatTransition = 0;
           seatStartPos.copy(sceneData.camera.position);
@@ -477,7 +581,6 @@ export default defineContentScript({
           fps.unlock();
           updateHUD();
           persistState();
-          // Transform will be applied once camera reaches seated position
         }
       }
     }
@@ -559,6 +662,14 @@ export default defineContentScript({
         const wasLooking = lookingAtDesk;
         lookingAtDesk = dot > 0.3 && distToDesk < SIT_DISTANCE;
         if (lookingAtDesk !== wasLooking) updateHUD();
+
+        // Record player proximity
+        const wasNearRP = nearRecordPlayer;
+        nearRecordPlayer = cam.position.distanceTo(sceneData.recordPlayerPos) < 2.5;
+        if (nearRecordPlayer !== wasNearRP) {
+          updateRecordSelection();
+          updateHUD();
+        }
       }
 
       // Decay drunk intensity
@@ -603,6 +714,15 @@ export default defineContentScript({
         }
       }
 
+      // Record player animation
+      if (sceneData.vinyl) {
+        if (musicPlaying) sceneData.vinyl.rotation.y += dt * 1.5;
+        // Tonearm: 0.4 = resting (away), 0.05 = playing (over record)
+        const targetArm = musicPlaying ? -0.7 : 0.4;
+        const arm = sceneData.tonearmGroup;
+        arm.rotation.y += (targetArm - arm.rotation.y) * Math.min(dt * 3, 1);
+      }
+
       // Shader time + scene animations
       crtMaterial.uniforms.u_time.value = time;
       sceneData.animate(time, dt);
@@ -626,26 +746,39 @@ export default defineContentScript({
         hideFrameOverlay();
       }
 
-      // Save frame snapshot every 2 seconds for seamless page transitions
+      // Save frame snapshot + state every 2 seconds for seamless page transitions
       if (timestamp - lastSnapshotTime > 2000) {
         lastSnapshotTime = timestamp;
         saveFrameSnapshot();
+        persistState();
       }
 
       rafId = requestAnimationFrame(renderLoop);
     }
 
     function persistState() {
-      chrome.storage.local.set({
-        crtState: { active: isActive, seated, drunkIntensity } as CRTState,
-      });
+      const state: CRTState = {
+        active: isActive,
+        seated,
+        drunkIntensity,
+        hasBeer: !!beerCanGroup,
+        musicPlaying,
+        musicRecord: selectedRecord,
+      };
+      if (fps && sceneData && !seated) {
+        state.posX = sceneData.camera.position.x;
+        state.posZ = sceneData.camera.position.z;
+        state.yaw = (fps as any).yaw;
+        state.pitch = (fps as any).pitch;
+      }
+      chrome.storage.local.set({ crtState: state });
     }
 
     chrome.storage.local.get('crtState', (result) => {
       const state = result.crtState as CRTState | undefined;
       if (state?.active) {
-        console.log(TAG, 'Restoring state, seated:', state.seated, 'drunk:', state.drunkIntensity);
-        activateCRT(state.seated ?? false, state.drunkIntensity ?? 0);
+        console.log(TAG, 'Restoring state', state);
+        activateCRT(state);
       }
     });
 

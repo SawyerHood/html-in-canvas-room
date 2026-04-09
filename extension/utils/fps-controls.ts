@@ -19,9 +19,10 @@ export class FPSControls {
   canvas: HTMLCanvasElement;
   enabled = true;
   colliders: Collider[] = [];
+  skippedColliders: Set<Collider> = new Set();
 
-  private yaw = 0;
-  private pitch = 0;
+  yaw = 0;
+  pitch = 0;
   private keys: Record<string, boolean> = {};
   private _isLocked = false;
 
@@ -122,7 +123,13 @@ export class FPSControls {
     const px = this.camera.position.x;
     const pz = this.camera.position.z;
     for (const c of this.colliders) {
-      if (px > c.minX && px < c.maxX && pz > c.minZ && pz < c.maxZ) {
+      const inside = px > c.minX && px < c.maxX && pz > c.minZ && pz < c.maxZ;
+      // If we're skipping this collider, re-enable once we've walked out
+      if (this.skippedColliders.has(c)) {
+        if (!inside) this.skippedColliders.delete(c);
+        continue;
+      }
+      if (inside) {
         const pushLeft = px - c.minX;
         const pushRight = c.maxX - px;
         const pushFront = pz - c.minZ;

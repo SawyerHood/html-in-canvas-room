@@ -14,6 +14,7 @@ export function createScene(canvas: HTMLCanvasElement) {
 
   // Dark night sky background
   scene.background = new THREE.Color(0x1c1d4a); // matches the sky in the city photo
+  scene.fog = new THREE.FogExp2(0x1a1a28, 0.015);
 
   // City backdrop — large plane placed outside the open left wall
   const cityImg = new Image();
@@ -48,6 +49,7 @@ export function createScene(canvas: HTMLCanvasElement) {
     console.log('[CRTWorld] City backdrop loaded');
   };
   cityImg.src = CITY_BACKDROP_URL;
+
 
   const camera = new THREE.PerspectiveCamera(
     65,
@@ -769,6 +771,146 @@ export function createScene(canvas: HTMLCanvasElement) {
   scene.add(beanBag);
   addCollider(3.0, 2.8, 0.55, 0.55); // bean bag
 
+  // ===== Record cabinet + player =====
+  // Everything in a group so we can position/rotate it once
+  const rpGroup = new THREE.Group();
+  rpGroup.position.set(0, 0, ROOM_SIZE / 2 - 0.3); // under poster, against front wall
+  rpGroup.rotation.y = Math.PI; // face into the room
+
+  const rpWoodMat = new THREE.MeshStandardMaterial({ color: 0x2a1a0a, roughness: 0.8 });
+  // Cabinet body
+  const cabinetBody = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.55, 0.45), rpWoodMat);
+  cabinetBody.position.y = 0.275;
+  rpGroup.add(cabinetBody);
+  // Cabinet top surface
+  const cabinetTop = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.03, 0.48), rpWoodMat);
+  cabinetTop.position.y = 0.565;
+  rpGroup.add(cabinetTop);
+  // Cabinet legs
+  const cabinetLegMat = new THREE.MeshStandardMaterial({ color: 0x1a1008, roughness: 0.7 });
+  for (const [lx, lz] of [[-0.35, 0.18], [0.35, 0.18], [-0.35, -0.18], [0.35, -0.18]]) {
+    const cleg = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.08, 8), cabinetLegMat);
+    cleg.position.set(lx, 0.0, lz);
+    rpGroup.add(cleg);
+  }
+  // Open front compartment
+  const compartment = new THREE.Mesh(
+    new THREE.BoxGeometry(0.7, 0.35, 0.02),
+    new THREE.MeshStandardMaterial({ color: 0x0a0804, roughness: 0.9 }),
+  );
+  compartment.position.set(0, 0.22, 0.23);
+  rpGroup.add(compartment);
+
+  // Record crate — records standing vertically in compartment
+  const RECORDS = [
+    { color: 0xcc4422, label: 0xffdd44, name: 'lofi hip hop', url: 'jfKfPfyJRdk' },
+    { color: 0xddaa22, label: 0x442200, name: 'jazz fusion', url: 'r8d4bCeTcQE' },
+    { color: 0x22cc44, label: 0x111111, name: 'drum and bass', url: 'hgA0TKQeNI0' },
+    { color: 0xcc22aa, label: 0xffccff, name: 'garage', url: 'U8YCbEcmlfM' },
+    { color: 0x2244cc, label: 0xffffff, name: 'house', url: 'ECYvgWPsfSo' },
+  ];
+  const recordMeshes: THREE.Mesh[] = [];
+  const selectedIndicator = new THREE.Mesh(
+    new THREE.BoxGeometry(0.005, 0.22, 0.22),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.5 }),
+  );
+  selectedIndicator.visible = false;
+  rpGroup.add(selectedIndicator);
+
+  for (let ri = 0; ri < RECORDS.length; ri++) {
+    const rec = RECORDS[ri];
+    const disc = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.1, 0.1, 0.005, 20),
+      new THREE.MeshStandardMaterial({ color: 0x0a0a0a, roughness: 0.3, metalness: 0.1 }),
+    );
+    disc.rotation.z = Math.PI / 2;
+    disc.position.set(-0.25 + ri * 0.1, 0.2, 0.15);
+    rpGroup.add(disc);
+    const discLabel = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.035, 0.035, 0.006, 12),
+      new THREE.MeshStandardMaterial({ color: rec.color, roughness: 0.7 }),
+    );
+    discLabel.rotation.z = Math.PI / 2;
+    discLabel.position.set(-0.25 + ri * 0.1, 0.2, 0.15);
+    rpGroup.add(discLabel);
+    recordMeshes.push(disc);
+  }
+
+  // Record player base (on top of cabinet)
+  const rpBaseMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.6 });
+  const rpBase = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.04, 0.32), rpBaseMat);
+  rpBase.position.y = 0.60;
+  rpGroup.add(rpBase);
+
+  // Platter
+  const platterMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.4, metalness: 0.2 });
+  const platter = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.01, 24), platterMat);
+  platter.position.set(-0.05, 0.625, 0);
+  rpGroup.add(platter);
+
+  // Vinyl record group (spins together)
+  const vinyl = new THREE.Group();
+  vinyl.position.set(-0.05, 0.635, 0);
+  const vinylMat = new THREE.MeshStandardMaterial({ color: 0x0a0a0a, roughness: 0.3, metalness: 0.1 });
+  const vinylDisc = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.005, 24), vinylMat);
+  vinyl.add(vinylDisc);
+  const labelMat = new THREE.MeshStandardMaterial({ color: 0xcc4422, roughness: 0.7 });
+  const labelDisc = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.006, 16), labelMat);
+  labelDisc.position.y = 0.003;
+  vinyl.add(labelDisc);
+  const labelDot = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.005, 0.005, 0.002, 8),
+    new THREE.MeshStandardMaterial({ color: 0xffdd44, roughness: 0.6 }),
+  );
+  labelDot.position.set(0.015, 0.007, 0.01);
+  vinyl.add(labelDot);
+  const labelMark = new THREE.Mesh(
+    new THREE.BoxGeometry(0.02, 0.002, 0.004),
+    new THREE.MeshStandardMaterial({ color: 0x331100, roughness: 0.8 }),
+  );
+  labelMark.position.set(-0.008, 0.007, -0.005);
+  vinyl.add(labelMark);
+  rpGroup.add(vinyl);
+
+  // Tonearm (pivots from base)
+  const armMat = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.3, metalness: 0.6 });
+  const tonearmBase = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.03, 8), armMat);
+  tonearmBase.position.set(0.15, 0.635, -0.15);
+  rpGroup.add(tonearmBase);
+  const tonearmGroup = new THREE.Group();
+  tonearmGroup.position.set(0.15, 0.65, -0.15);
+  const tonearmBar = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.008, 0.25), armMat);
+  tonearmBar.position.set(0, 0, 0.125);
+  tonearmGroup.add(tonearmBar);
+  const headshell = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.006, 0.02), armMat);
+  headshell.position.set(0, -0.003, 0.255);
+  tonearmGroup.add(headshell);
+  tonearmGroup.rotation.y = 0.4;
+  rpGroup.add(tonearmGroup);
+
+  // Speakers flanking the cabinet
+  const speakerMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.7 });
+  const coneMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.5 });
+  for (const sx of [-0.6, 0.6]) {
+    // Cabinet
+    const spkBox = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.35, 0.2), speakerMat);
+    spkBox.position.set(sx, 0.175, 0);
+    rpGroup.add(spkBox);
+    // Woofer
+    const woofer = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.07, 0.02, 16), coneMat);
+    woofer.rotation.x = Math.PI / 2;
+    woofer.position.set(sx, 0.14, 0.11);
+    rpGroup.add(woofer);
+    // Tweeter
+    const tweeter = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 0.015, 12), coneMat);
+    tweeter.rotation.x = Math.PI / 2;
+    tweeter.position.set(sx, 0.26, 0.11);
+    rpGroup.add(tweeter);
+  }
+
+  scene.add(rpGroup);
+  addCollider(0, ROOM_SIZE / 2 - 0.3, 0.75, 0.35); // cabinet + speakers
+
   // ===== Floor lamp near bean bag =====
   const lampBaseMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.5, metalness: 0.3 });
   // Base
@@ -1098,5 +1240,12 @@ export function createScene(canvas: HTMLCanvasElement) {
   }
   window.addEventListener('resize', onResize);
 
-  return { renderer, scene, camera, screenMesh, interactionZone, onResize, animate, colliders };
+  // Record player position for interaction
+  const recordPlayerPos = new THREE.Vector3(0, 0.5, ROOM_SIZE / 2 - 0.3);
+
+  return {
+    renderer, scene, camera, screenMesh, interactionZone, onResize, animate, colliders,
+    vinyl, tonearmGroup, recordPlayerPos, labelDisc,
+    records: RECORDS, recordMeshes, selectedIndicator,
+  };
 }
